@@ -1,0 +1,19 @@
+py.install_sources(
+    [
+        '__init__.py',
+        '__main__.py',
+        'test.py',
+        'editor.py',
+        'camera.py',
+        'transform.py',
+        'scene_loader.py',
+        'overlay.py',
+        'debug_font.py',
+        'vec.py',
+    ],
+    subdir:'splatastic'
+)
+
+subdir('native')
+subdir('data')
+subdir('shaders')

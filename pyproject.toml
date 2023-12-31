@@ -1,0 +1,15 @@
+[build-system]
+build-backend = 'mesonpy'
+requires = ['meson-python']
+
+[project]
+name = 'splatastic'
+version = '0.0.1'
+description = 'A splatter renderer written in python and hlsl compute.'
+readme = 'README.md'
+requires-python = '>=3.8'
+license = {file = 'LICENSE'}
+authors = [
+  {name = 'Kleber Garcia', email = 'kecho_garcia@hotmail.com'},
+]
+dependencies = [ 'numpy', 'coalpy', 'numpy-quaternion' ]

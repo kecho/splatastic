@@ -1,0 +1,6 @@
+__pycache__*
+build/*
+build-dbg/*
+tags
+imgui.ini
+editor_state.json

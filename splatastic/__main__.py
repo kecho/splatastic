@@ -5,6 +5,7 @@ import coalpy.gpu
 from . import editor
 from . import init_module, shutdown_module
 from . import overlay
+from . import splat_rasterizer
 
 print ("##########################")
 print ("####### splatastic #######")
@@ -18,6 +19,8 @@ initial_h = 900
 active_editor = editor.Editor()
 active_editor.load_editor_state()
 
+rasterizer = splat_rasterizer.SplatRaster()
+
 def on_render(render_args : coalpy.gpu.RenderArgs):
     if render_args.width == 0 or render_args.height == 0:
         return False
@@ -26,7 +29,9 @@ def on_render(render_args : coalpy.gpu.RenderArgs):
     for vp in viewports:
         vp.update(render_args.delta_time)
         cmd_list = coalpy.gpu.CommandList()
-        overlay.render_overlay(cmd_list, vp.texture, vp)
+
+        rasterizer.raster(cmd_list, vp.camera.view_matrix, vp.camera.proj_matrix, vp.width, vp.height)
+        overlay.render_overlay(cmd_list, rasterizer, vp.texture, vp)
         coalpy.gpu.schedule(cmd_list)
     return
 

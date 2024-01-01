@@ -5,6 +5,7 @@ import coalpy.gpu
 from . import native
 from . import debug_font
 from . import overlay
+from . import utilities
 
 g_wave_size = 0
 g_module_path = os.path.dirname(pathlib.Path(sys.modules[__name__].__file__)) + "\\"
@@ -51,8 +52,10 @@ def init_module():
     g_wave_size = _queryWaveSize(selected_gpu)
     info = coalpy.gpu.get_current_adapter_info()
     print("device: {}".format(info[1]))
+
     debug_font.init()
     overlay.init()
+    utilities.init()
 
 def shutdown_module():
     native.shutdown()

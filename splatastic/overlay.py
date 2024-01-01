@@ -15,20 +15,24 @@ def init():
     global g_overlay_shader
     g_overlay_shader = g.Shader(file = "shaders/overlay_cs.hlsl", name = "main_overlay", main_function = "csMainOverlay")
 
-def render_overlay(cmd_list, output_texture, view_settings):
+def render_overlay(cmd_list, rasterizer, output_texture, view_settings):
+
     w = view_settings.width
     h = view_settings.height
+    (ct_x, ct_y) = rasterizer.get_coarse_tiles_dims(w, h)
+
     cmd_list.begin_marker("overlay")
     overlay_flags = OverlayFlags.NONE
 
     cmd_list.dispatch(
         shader = g_overlay_shader,
         constants = [
-            int(w), int(h), 0, 0,
+            int(w), int(h), ct_x, ct_y,
         ],
 
         inputs = [
-            debug_font.font_texture
+            debug_font.font_texture,
+            rasterizer.m_tile_counter
         ],
 
         samplers = debug_font.font_sampler,

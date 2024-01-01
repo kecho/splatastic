@@ -2,15 +2,16 @@ py.install_sources(
     [
         '__init__.py',
         '__main__.py',
-        'test.py',
-        'editor.py',
         'camera.py',
-        'transform.py',
-        'scene_loader.py',
-        'overlay.py',
         'debug_font.py',
+        'editor.py',
+        'overlay.py',
+        'scene_loader.py',
         'splat_rasterizer.py',
+        'test.py',
+        'transform.py',
         'vec.py',
+        'utilities.py'
     ],
     subdir:'splatastic'
 )

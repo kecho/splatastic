@@ -7,6 +7,7 @@
 SamplerState g_fontSampler : register(s0);
 
 Texture2D<float4> g_debugFont : register(t0);
+Buffer<uint> g_coarseTileCounts : register(t1);
 
 RWTexture2D<float4> g_output : register(u0);
 
@@ -18,7 +19,8 @@ RWTexture2D<float4> g_output : register(u0);
 
 cbuffer Constants : register(b0)
 {
-    int4 g_dims;
+    int2 g_viewSize;
+    int2 g_coarseTileViewDims;
 }
 
 float4 drawTile(int2 coord, int tileSize, int tileCount)
@@ -69,7 +71,7 @@ float4 drawHeatmapLegend(float2 uv, float2 minUv, float2 maxUv)
     float2 txy = (uv - minUv)/(maxUv - minUv);
     txy.y = 1.0 - txy.y;
 
-    float2 quadSizePixels = (maxUv - minUv) * float2(g_dims.xy);
+    float2 quadSizePixels = (maxUv - minUv) * float2(g_viewSize.xy);
     float2 fontQuad = quadSizePixels/FONT_BLOCK_SIZE;
     
     float4 beginFont  = Font::drawNumber(g_debugFont, g_fontSampler, (txy - float2(0.0 , 0))*fontQuad / float2(2,1), 2, 1);
@@ -91,7 +93,9 @@ void csMainOverlay(
     int3 gti : SV_GroupThreadID,
     int2 groupID : SV_GroupID)
 {
+    uint tileCoord = groupID.x + groupID.y * g_coarseTileViewDims.x;
     float2 tileUV = (gti.xy + 0.5) / float2(32.0, 32.0);
-    float4 tileColor = drawTile(dti.xy, 32, 18);
+    uint coarseCount = g_coarseTileCounts[tileCoord];
+    float4 tileColor = coarseCount == 0 ? float4(0,0,0,0) : drawTile(dti.xy, 32, coarseCount);
     g_output[dti.xy] = float4(tileColor.rgb, 1.0);
 }

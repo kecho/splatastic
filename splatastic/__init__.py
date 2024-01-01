@@ -3,6 +3,8 @@ import sys
 import pathlib
 import coalpy.gpu
 from . import native
+from . import debug_font
+from . import overlay
 
 g_wave_size = 0
 g_module_path = os.path.dirname(pathlib.Path(sys.modules[__name__].__file__)) + "\\"
@@ -44,10 +46,13 @@ def init_module():
     coalpy_settings.enable_debug_device = False
     coalpy.gpu.init()
     coalpy.gpu.add_data_path(g_module_path)
-    coalpy.gpu.add_data_path(g_module_path+"/shaders")
+    coalpy.gpu.add_data_path(g_module_path+"data\\")
+    coalpy.gpu.add_data_path(g_module_path+"shaders\\")
     g_wave_size = _queryWaveSize(selected_gpu)
     info = coalpy.gpu.get_current_adapter_info()
     print("device: {}".format(info[1]))
+    debug_font.init()
+    overlay.init()
 
 def shutdown_module():
     native.shutdown()

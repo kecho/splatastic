@@ -4,6 +4,7 @@ import pathlib
 import coalpy.gpu
 from . import editor
 from . import init_module, shutdown_module
+from . import overlay
 
 print ("##########################")
 print ("####### splatastic #######")
@@ -24,6 +25,9 @@ def on_render(render_args : coalpy.gpu.RenderArgs):
     viewports = active_editor.viewports
     for vp in viewports:
         vp.update(render_args.delta_time)
+        cmd_list = coalpy.gpu.CommandList()
+        overlay.render_overlay(cmd_list, vp.texture, vp)
+        coalpy.gpu.schedule(cmd_list)
     return
 
 w = coalpy.gpu.Window(

@@ -7,12 +7,6 @@
 SamplerState g_fontSampler : register(s0);
 
 Texture2D<float4> g_debugFont : register(t0);
-Texture2D<float4> g_colorBuffer : register(t1);
-Buffer<uint> g_totalBins : register(t2);
-Buffer<uint> g_binCounters : register(t3);
-Buffer<uint> g_binOffsets : register(t4);
-StructuredBuffer<raster::BinIntersectionRecord> g_binOutputRecords : register(t5);
-Buffer<uint> g_fineTileCounters : register(t6);
 
 RWTexture2D<float4> g_output : register(u0);
 
@@ -20,15 +14,11 @@ RWTexture2D<float4> g_output : register(u0);
 #define BORDER_PIXELS 1.0
 #define BORDER_COLOR float4(0.8, 0.8, 0.8, 0.3)
 #define FONT_COLOR float4(0.8, 0.8, 0.8, 1.0)
-#define TILE_COLOR float4(0, 0, 1.0, 0.3)
+#define TILE_COLOR float4(0.0, 0, 1.0, 0.3)
 
 cbuffer Constants : register(b0)
 {
     int4 g_dims;
-    float g_binTileX;
-    float g_binTileY;
-    int   g_binCoarseTileSize;
-    int   g_overlayFlags;
 }
 
 float4 drawTile(int2 coord, int tileSize, int tileCount)
@@ -40,7 +30,6 @@ float4 drawTile(int2 coord, int tileSize, int tileCount)
 
     int2 tileCoord = int2(coord.x % tileSize, coord.y % tileSize);
     float2 tileUv = (tileCoord + 0.5) / (float)tileSize;
-    tileUv.y = 1.0 - tileUv.y;
     float2 borderUvs = abs(tileUv * 2.0 - 1.0) - (1.0 - borderThickness);
     bool isBorder = any(borderUvs > 0.0);
     if (isBorder)
@@ -60,6 +49,8 @@ float4 drawTile(int2 coord, int tileSize, int tileCount)
 
     return tileColor;
 }
+
+#if 0
 
 float3 heatColor(float t)
 {
@@ -92,39 +83,15 @@ float4 drawHeatmapLegend(float2 uv, float2 minUv, float2 maxUv)
     return lerp(bgCol, fontCol, fontCol.a);
 }
 
-[numthreads(FINE_TILE_SIZE, FINE_TILE_SIZE, 1)]
-void csMainOverlay(int3 dti : SV_DispatchThreadID, int2 groupID : SV_GroupID)
-{
-#if 0
-    float3 finalColor = g_colorBuffer[dti.xy].xyz;
-    int2 outputCoord = int2(dti.x, g_dims.y - dti.y - 1);
-    float2 uv = geometry::pixelToUV(dti.xy, g_dims.xy);
-
-    [branch]
-    if ((g_overlayFlags & OVERLAY_FLAGS_SHOW_COARSE_TILES) != 0)
-    {
-        int tileX = groupID.x >> FINE_TILE_TO_TILE_SHIFT;
-        int tileY = groupID.y >> FINE_TILE_TO_TILE_SHIFT;
-        int tileId = tileY * g_binTileX + tileX;
-        uint count = g_binCounters[tileId];
-        float4 tileColor = drawTile(uv * g_dims.xy * 1.0, COARSE_TILE_SIZE, count);
-        float4 debugBinCol = count != 0 ? tileColor : float4(0,0,0,0);
-        finalColor = lerp(finalColor, debugBinCol.xyz, debugBinCol.a);
-    }
-
-    [branch]
-    if ((g_overlayFlags & OVERLAY_FLAGS_SHOW_FINE_TILES) != 0)
-    {
-        float4 heatmapColor = drawHeatmapLegend(uv, float2(0.07, 0.1), float2(0.93, 0.15));
-        float2 fineTileSize = ceil((float2)g_dims.xy / FINE_TILE_SIZE);
-        uint tileCounts = g_fineTileCounters[groupID.y * (int)fineTileSize.x + groupID.x];
-        float3 tileColor = heatColor(saturate((float)tileCounts / 300.0));
-        finalColor = lerp(finalColor, tileColor, 0.7 * (tileCounts > 0 ? 1.0 : 0.0));
-        finalColor = lerp(finalColor, heatmapColor.rgb, heatmapColor.a);
-    }
-
-    g_output[outputCoord] = float4(finalColor, 1.0);
-#else
-    g_output[outputCoord] = float4(1.0, 0.0, 0.0, 1.0);
 #endif
+
+[numthreads(32, 32, 1)]
+void csMainOverlay(
+    int3 dti : SV_DispatchThreadID,
+    int3 gti : SV_GroupThreadID,
+    int2 groupID : SV_GroupID)
+{
+    float2 tileUV = (gti.xy + 0.5) / float2(32.0, 32.0);
+    float4 tileColor = drawTile(dti.xy, 32, 18);
+    g_output[dti.xy] = float4(tileColor.rgb, 1.0);
 }

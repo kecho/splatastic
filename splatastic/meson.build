@@ -9,6 +9,7 @@ py.install_sources(
         'scene_loader.py',
         'overlay.py',
         'debug_font.py',
+        'splat_rasterizer.py',
         'vec.py',
     ],
     subdir:'splatastic'

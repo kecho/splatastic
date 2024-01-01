@@ -146,6 +146,9 @@ size_t parsePlyHeader(PlyFileData& fileData, const char* buffer, size_t bufferSi
             fileData.errorStr = "Exceeded header number of lines";
             break;
         }
+
+        if (readState == EndHeader)
+            break;
     }
 
     if (readState != EndHeader)

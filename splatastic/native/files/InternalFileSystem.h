@@ -11,7 +11,7 @@ namespace InternalFileSystem
 {
     enum
     {
-        bufferSize = 16 * 1024 //16kb buffer size
+        bufferSize = 32 * 1024 //32kb buffer size
     };
 
     enum RequestType

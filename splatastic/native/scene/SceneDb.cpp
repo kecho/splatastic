@@ -45,29 +45,6 @@ SceneLoadHandle SceneDb::openScene(const char* path)
             state.bytesRead += response.size;
             state.totalBytes =  response.fileSize;
             parsePlyChunk(*state.plyFileData, response.buffer, response.size);
-#if 0
-            size_t readOffset = 0;
-            if (!state.plyFileData->hasHeader)
-                readOffset = parsePlyChunk(*state.plyFileData, response.buffer, response.size);
-
-            if (state.plyFileData->hasHeader)
-            {
-                if (state.plyFileData->payload == nullptr)
-                {
-                    state.plyFileData->payloadSize = state.plyFileData->vertexCount * state.plyFileData->strideSize;
-                    state.plyFileData->payload = new char[state.plyFileData->payloadSize];
-                    state.plyFileData->payloadReadSize = 0;
-                }
-
-                size_t chunkSize = response.size - readOffset;
-                memcpy(
-                    state.plyFileData->payload + state.plyFileData->payloadReadSize,
-                    response.buffer + readOffset,
-                    chunkSize);
-                state.plyFileData->payloadReadSize += chunkSize;
-            }
-#endif
-
             loadStatus = SceneLoadStatus::Reading;
         }
         else if (response.status == FileStatus::Success)

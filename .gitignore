@@ -1,6 +1,7 @@
 __pycache__*
 build/*
 build-dbg/*
+test_data/*
 tags
 imgui.ini
 editor_state.json

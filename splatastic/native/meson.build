@@ -9,7 +9,8 @@ py.extension_module(
         'files/FileSystem.cpp',
         'files/InternalFileSystem.cpp',
         'files/Utils.cpp',
-        'scene/SceneDb.cpp'
+        'scene/SceneDb.cpp',
+        'scene/PlyParser.cpp'
     ],
     # cpp_args: ['-fno-exceptions', '-fno-rtti', '-D__STDC_VERSION__=0' ],
     install: true,

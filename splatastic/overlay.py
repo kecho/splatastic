@@ -15,7 +15,7 @@ def init():
     global g_overlay_shader
     g_overlay_shader = g.Shader(file = "shaders/overlay_cs.hlsl", name = "main_overlay", main_function = "csMainOverlay")
 
-def render_overlay(cmd_list, rasterizer, output_texture, view_settings):
+def render_overlay(cmd_list, rasterizer, color_buffer, output_texture, view_settings):
 
     w = view_settings.width
     h = view_settings.height
@@ -32,7 +32,8 @@ def render_overlay(cmd_list, rasterizer, output_texture, view_settings):
 
         inputs = [
             debug_font.font_texture,
-            rasterizer.m_tile_counter
+            rasterizer.m_tile_counter,
+            color_buffer
         ],
 
         samplers = debug_font.font_sampler,

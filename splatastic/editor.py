@@ -49,7 +49,6 @@ class EditorViewport:
         self.m_last_mouse = (0, 0)
         self.m_curr_mouse = (0, 0)
 
-
     def save_editor_state(self):
         return {
             'id' : self.m_id,
@@ -211,7 +210,14 @@ class Editor:
 
         self.m_open_active = False
         self.m_tools = self.createToolPanels()
+
+        #scene data
         self.m_scene_loader = None
+        self.m_scene_data = None
+
+    @property
+    def scene_data(self):
+        return self.m_scene_data
 
     def createToolPanels(self):
         return {
@@ -307,7 +313,7 @@ class Editor:
 
         panel.state = imgui.begin(panel.name, panel.state)
 
-        if self.m_scene_loader is None and imgui.button("Open Scene") and  not self.m_open_active:
+        if self.m_scene_loader is None and imgui.button("Open Scene") and not self.m_open_active:
             self.m_open_active = True
         elif self.m_scene_loader != None:
             imgui.text("Opening scene...")
@@ -319,7 +325,12 @@ class Editor:
                 self.m_scene_loader = None
             elif status == scene_loader.SuccessFinish:
                 print("Success loading scene.") 
+                self.m_scene_data = self.m_scene_loader.scene_data
                 self.m_scene_loader = None
+
+        if self.m_scene_data != None:
+            imgui.text("Scene vertices: %d" % self.m_scene_data.vertex_count)
+            imgui.text("Vertex stride: %d" % self.m_scene_data.stride)
 
         imgui.end()
 

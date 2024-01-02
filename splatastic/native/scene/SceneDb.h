@@ -29,6 +29,12 @@ enum class SceneLoadStatus
 
 struct PlyFileData;
 
+struct SplatSceneMetadata
+{
+    size_t vertexCount;
+    size_t stride;
+};
+
 class SceneDb
 {
 public:
@@ -46,6 +52,8 @@ public:
         unsigned long long& totalBytes);
 
     bool copyPayload(SceneLoadHandle handle, char* dest, size_t destSize);
+
+    bool sceneMetadata(SceneLoadHandle handle, SplatSceneMetadata& metadata);
 
     const char* errorStr(SceneLoadHandle handle);
     void resolve(SceneLoadHandle handle);

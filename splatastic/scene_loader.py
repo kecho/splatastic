@@ -9,12 +9,39 @@ InvalidHandle = 3
 SuccessFinish = 4
 Failed = 5
 
+class SceneData:
+    def __init__(self):
+        self.m_metadata_buffer = None
+        self.m_payload_buffer = None
+        self.m_vertex_count = 0
+        self.m_stride = 0
+
+    @property
+    def vertex_count(self):
+        return self.m_vertex_count
+
+    @property
+    def stride(self):
+        return self.m_stride
+
+    @property
+    def payload_buffer(self):
+        return self.m_payload_buffer
+
+    @property
+    def metadata_buffer(self):
+        return self.m_metadata_buffer
+
 class Loader:
     def __init__(self, file_name):
         self.m_request = n.SceneAsyncRequest(file = file_name)
         self.m_gpu_upload_buffer = None
-        self.m_payload_buffer = None
         self.m_payload_ready = False
+        self.m_scene_data = None
+
+    @property
+    def scene_data(self):
+        return self.m_scene_data
 
     def update_load_status(self):
         if self.m_payload_ready:
@@ -33,6 +60,7 @@ class Loader:
             return (Reading, 1.0, "Copying payload to GPU write combined")
         elif status == SuccessFinish:
             if self.m_gpu_upload_buffer is None:
+                self.m_scene_data = SceneData()
                 payload_size = self.m_request.payload_size()
                 if payload_size == 0:
                     return (Failed, 0.0, "Payload size recovered from scene is 0")
@@ -46,7 +74,7 @@ class Loader:
                     usage = coalpy.gpu.BufferUsage.Upload)
 
                 self.m_request.request_copy_payload(self.m_gpu_upload_buffer.mappedMemory())
-                self.m_payload_buffer = coalpy.gpu.Buffer(
+                self.m_scene_data.m_payload_buffer = coalpy.gpu.Buffer(
                     name="ScenePayloadBuffer",
                     type = coalpy.gpu.BufferType.Raw,
                     stride = 4,
@@ -55,12 +83,28 @@ class Loader:
                 return (Reading, 1.0, "")
             else:
                 self.m_request.close_copy_payload()
+                metadata = self.m_request.metadata()
+                (self.m_scene_data.m_vertex_count, self.m_scene_data.m_stride) = metadata
+
                 self.m_request = None
                 cmd_list = coalpy.gpu.CommandList()
-                cmd_list.copy_resource(self.m_gpu_upload_buffer, self.m_payload_buffer)
-                coalpy.gpu.schedule(cmd_list)
+                cmd_list.copy_resource(self.m_gpu_upload_buffer, self.m_scene_data.m_payload_buffer)
                 self.m_gpu_upload_buffer = None
+
+                self.m_scene_data.m_metadata_buffer = coalpy.gpu.Buffer(
+                    name="SceneMetadataBuffer",
+                    type = coalpy.gpu.BufferType.Standard,
+                    format = coalpy.gpu.Format.R32_UINT,
+                    stride = 4,
+                    element_count = 4,
+                    mem_flags = coalpy.gpu.MemFlags.GpuRead | coalpy.gpu.MemFlags.GpuWrite)
+                
+                cmd_list.upload_resource(
+                    source = [(metadata[0]), int(metadata[1]), 0, 0],
+                    destination = self.m_scene_data.m_metadata_buffer)
+
                 self.m_payload_ready = True
+                coalpy.gpu.schedule(cmd_list)
                 return (SuccessFinish, 1.0, "Success")
 
         return (Failed, 0.0, "Unknown state")

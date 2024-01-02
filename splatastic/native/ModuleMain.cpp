@@ -218,6 +218,30 @@ PyObject* SceneAsyncRequest_payloadSize(PyObject* self, PyObject* vargs, PyObjec
     return Py_BuildValue("i", g_sdb->payloadSize(sceneRequest.loadHandle));
 }
 
+PyObject* SceneAsyncRequest_metadata(PyObject* self, PyObject* vargs, PyObject* kwds)
+{
+    auto& sceneRequest = *(SceneAsyncRequest*)self;
+    if (!sceneRequest.loadHandle.valid())
+    {
+        PyErr_SetString(g_exObj, "Invalid scene request.");
+        return nullptr;
+    }
+
+    if (!sceneRequest.loadHandle.valid())
+    {
+        PyErr_SetString(g_exObj, "Invalid load handle.");
+        return nullptr;
+    }
+
+    SplatSceneMetadata metadata = {};
+    if (!g_sdb->sceneMetadata(sceneRequest.loadHandle, metadata))
+    {
+        PyErr_SetString(g_exObj, "Invalid scene metadata.");
+        return nullptr;
+    }
+
+    return Py_BuildValue("(ii)", metadata.vertexCount, metadata.stride);
+}
 
 void SceneAsyncRequest_dealloc(PyObject* self)
 {
@@ -244,6 +268,7 @@ bool registerSceneAsyncRequestType(PyObject* moduleObj)
         KW_FN(resolve, SceneAsyncRequest_resolve, "Halts and blocks for io to finish."),
         KW_FN(request_copy_payload, SceneAsyncRequest_requestCopyPayload, "Copies a payload to a destination memory view."),
         KW_FN(payload_size, SceneAsyncRequest_payloadSize, "Gets payload size."),
+        KW_FN(metadata, SceneAsyncRequest_metadata, "Gets metadata as a tuple."),
         KW_FN(close_copy_payload, SceneAsyncRequest_closeCopyPayload, "Closes an in flight copy payload."),
         { nullptr }
     };

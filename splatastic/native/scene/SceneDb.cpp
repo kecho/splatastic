@@ -154,6 +154,19 @@ bool SceneDb::copyPayload(SceneLoadHandle handle, char* dest, size_t destSize)
     return true;
 }
 
+bool SceneDb::sceneMetadata(SceneLoadHandle handle, SplatSceneMetadata& metadata)
+{
+    if (!handle.valid() || !m_loads.contains(handle))
+        return false;
+
+    if (m_loadStatuses[handle] != SceneLoadStatus::SuccessFinish)
+        return false;
+
+    SceneReadState& state = m_loads[handle];
+    metadata.vertexCount = state.plyFileData->vertexCount;
+    metadata.stride = state.plyFileData->strideSize;
+    return true;
+}
 
 size_t SceneDb::payloadSize(SceneLoadHandle handle)
 {

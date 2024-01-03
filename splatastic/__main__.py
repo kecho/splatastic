@@ -2,6 +2,7 @@ import os
 import sys
 import pathlib
 import coalpy.gpu
+import argparse
 from . import editor
 from . import init_module, shutdown_module
 from . import overlay
@@ -11,6 +12,13 @@ print ("##########################")
 print ("####### splatastic #######")
 print ("##########################")
 
+parser = argparse.ArgumentParser(
+        prog="python -m splatastic",
+        description = "::splatastic:: - splat renderer")
+parser.add_argument("-s", "--scene", default=None, required = False, help = "Scene file to load")
+args = parser.parse_args()
+print(args.scene)
+
 init_module()
 
 initial_w = 1600 
@@ -18,6 +26,7 @@ initial_h = 900
 
 active_editor = editor.Editor()
 active_editor.load_editor_state()
+active_editor.load_scene(args.scene)
 
 rasterizer = splat_rasterizer.SplatRaster()
 

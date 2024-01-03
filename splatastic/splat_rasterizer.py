@@ -30,8 +30,8 @@ class SplatRaster:
             int(width), int(height), float(1.0/width), float(1.0/height),
             int(coarse_tile_count_x), int(coarse_tile_count_y), float(1.0/coarse_tile_count_x), float(1.0/coarse_tile_count_y),
         ]
-        constants_data.extend(view_matrix.flatten().tolist())
-        constants_data.extend(proj_matrix.flatten().tolist())
+        constants_data.extend(view_matrix.transpose().flatten().tolist())
+        constants_data.extend(proj_matrix.transpose().flatten().tolist())
 
         if self.m_constants == None:
             self.m_constants = g.Buffer(
@@ -63,12 +63,16 @@ class SplatRaster:
         utilities.clear_uint_buffer(cmd_list, 0, self.m_tile_counter, 0, coarse_tile_count_x * coarse_tile_count_y)
 
     def dispatch_coarse_tile_bin(self, cmd_list, scene_data):
+    
+        #keep in sync with csCoarseTileBin
+        coarse_tile_bin_threads = 128
+
         cmd_list.dispatch(
             shader = self.m_coarse_dispatch_bin_shader,
             constants = self.m_constants,
             inputs = [ scene_data.metadata_buffer, scene_data.payload_buffer ],
             outputs = self.m_tile_counter,
-            x = 1, y = 1, z = 1)
+            x = utilities.divup(scene_data.vertex_count, coarse_tile_bin_threads), y = 1, z = 1)
 
     def dispatch_raster_splat(self, cmd_list, scene_data, width, height):
         cmd_list.dispatch(
@@ -79,7 +83,7 @@ class SplatRaster:
             x = utilities.divup(width, 8), y = utilities.divup(height, 8), z = 1)
 
     def get_coarse_tiles_dims(self, width, height):
-        return  (int(math.ceil(width/CoarseTileSize)), int(math.ceil(height/CoarseTileSize)))
+        return (int(math.ceil(width/CoarseTileSize)), int(math.ceil(height/CoarseTileSize)))
 
     def raster(self, cmd_list, scene_data, view_matrix, proj_matrix, width, height):
         (coarse_tile_count_x, coarse_tile_count_y) = self.get_coarse_tiles_dims(width, height)

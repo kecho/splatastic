@@ -15,7 +15,7 @@ cbuffer Constants : register(b0)
 //Utility functions
 float4 worldToClip(float3 worldPos)
 {
-    return mul(mul(float4(worldPos,1), g_view), g_proj);
+    return mul(g_proj, mul(g_view, float4(worldPos, 1.0)));
 }
 
 float2 clipToUv(float4 clipPos)
@@ -197,12 +197,17 @@ void decomposeCovariance(float3 cov2d, out float2 v1, out float2 v2)
 
 /////
 
-[numthreads(1, 1, 1)]
-void csCoarseTileBin(int3 dti : SV_DispatchThreadID)
+#define COARSE_TILE_BIN_THREADS 128
+[numthreads(COARSE_TILE_BIN_THREADS, 1, 1)]
+void csCoarseTileBin(uint3 dti : SV_DispatchThreadID)
 {
     SplatScene splatScene = loadSplatScene();
+    uint threadID = dti.x;
 
-    float3 worldPos = loadSplatPosition(splatScene, 0);
+    if (threadID >= splatScene.vertexCount)
+        return;
+
+    float3 worldPos = loadSplatPosition(splatScene, threadID);
     float4 clipPos = worldToClip(worldPos);
     if (any(abs(clipPos.xyz) > clipPos.www))
         return;
@@ -211,7 +216,8 @@ void csCoarseTileBin(int3 dti : SV_DispatchThreadID)
     
     uint2 tileCoord = (uint2)floor(uvPos.xy * (float2)g_viewSize / float(COARSE_TILE_SIZE));
 
-    g_outCoarseTileCounts[tileCoord.x + tileCoord.y * g_coarseTileViewDims.x] = 1;
+    uint unused;
+    InterlockedAdd(g_outCoarseTileCounts[tileCoord.x + tileCoord.y * g_coarseTileViewDims.x], 1, unused);
 }
 
 RWTexture2D<float4> g_colorBuffer : register(u0);
@@ -227,10 +233,11 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
     float2 screenUv = (dti.xy + 0.5) * float2(g_viewSizeInv.xy);
 
     float3 col = float3(0,0,0);
-    for (int i = 0; i < 256; ++i)
+    for (int i = 0; i < 1; ++i)
     {
         float3 splatPos = loadSplatPosition(splatScene, i);
         float3 splatScale = loadSplatScale(splatScene, i);
+    
         float4 splatRotation = loadSplatRotation(splatScene, i);
         float3x3 splatTransform = calcMatrixFromRotationScale(splatRotation, splatScale);
 
@@ -239,7 +246,7 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
 
         float4 splatClipPos = worldToClip(splatPos);
         float2 splatScreenUv = clipToUv(splatClipPos);
-        float3 cov2d = calcCovariance2D(splatPos, cov3d0, cov3d1, transpose(g_view), transpose(g_proj), (float)g_viewSize.x);
+        float3 cov2d = calcCovariance2D(splatPos, cov3d0, cov3d1, g_view, g_proj, (float)g_viewSize.x);
 
         float2 axis0, axis1;
         decomposeCovariance(cov2d, axis0, axis1);
@@ -250,14 +257,15 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
         axis0 *= rcp(axis0Len);
         axis1 *= rcp(axis1Len);
 
-        float2 splatRelUv = (splatScreenUv - screenUv) * (float2)g_viewSize.xy * 2.0;
+        float2 splatRelUv = (splatScreenUv - screenUv) * (float2)g_viewSize.xy;
         float2 localCoord = float2(dot(axis0, splatRelUv), dot(axis1, splatRelUv));
 
-        float3 debugCol = all(abs(localCoord) < float2(axis0Len, axis1Len)) ? float3(1,0,0) : float3(0,0,0);
+        //float3 debugCol = all(abs(localCoord) < float2(axis0Len, axis1Len)) ? float3(1,0,0) : float3(0,0,0);
+        float3 debugCol = length(localCoord / float2(axis0Len, axis1Len)) < 1.0 ? float3(1,0,0) : float3(0,0,0);
         if (splatClipPos.z > splatClipPos.w)
             debugCol = float3(0,0,0);
 
-        col += debugCol * 0.1;
+        col += debugCol;
     }
 
     g_colorBuffer[dti.xy] = float4(col, 1.0);

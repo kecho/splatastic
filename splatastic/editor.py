@@ -327,6 +327,10 @@ class Editor:
                 print("Success loading scene.") 
                 self.m_scene_data = self.m_scene_loader.scene_data
                 self.m_scene_loader = None
+                if self.m_scene_data.vertex_count == 0:
+                    print ("No vertex count found. Unloading scene.")
+                    self.m_scene_data.vertex_count = None
+        
 
         if self.m_scene_data != None:
             imgui.text("Scene vertices: %d" % self.m_scene_data.vertex_count)
@@ -365,6 +369,11 @@ class Editor:
         imgui.dockbuilder_finish(root_d_id)
         self.m_set_default_layout = False
 
+    def load_scene(self, file_path_name):
+        if file_path_name is None:
+            return
+        self.m_scene_loader = scene_loader.Loader(file_path_name)
+
     def build_open_file(self, imgui):
         if not self.m_open_active:
             return
@@ -377,7 +386,7 @@ class Editor:
         self.m_open_active = False
         (cmd, file_path_name, file_path) = ret
         if cmd == "ok":
-            self.m_scene_loader = scene_loader.Loader(file_path_name)
+            self.load_scene(file_path_name)
 
     def build_ui(self, imgui : g.ImguiBuilder, implot : g.ImplotBuilder):
         root_d_id = imgui.get_id("RootDock")

@@ -49,6 +49,7 @@ class SplatRaster:
         (self.m_max_width, self.m_max_height) = (width, height)
         self.m_tile_counter = g.Buffer(
             "TileCounter",
+            format = g.Format.R32_UINT,
             stride = 4, 
             element_count = coarse_tile_count_x * coarse_tile_count_y)
 

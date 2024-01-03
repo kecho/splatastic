@@ -18,10 +18,25 @@ float4 worldToClip(float3 worldPos)
     return mul(g_proj, mul(g_view, float4(worldPos, 1.0)));
 }
 
+float3 worldToView(float3 worldPos)
+{
+    return mul(g_view, float4(worldPos, 1.0)).xyz;
+}
+
+float4 viewToClip(float3 viewPos)
+{
+    return mul(g_proj, float4(viewPos, 1.0));
+}
+
+float2 ndcToUv(float2 ndc)
+{
+    return ndc * float2(0.5, -0.5) + 0.5;
+}
+
 float2 clipToUv(float4 clipPos)
 {
     float2 ndcPos = clipPos.xy / clipPos.w;
-    float2 uv = ndcPos * float2(0.5, -0.5) + 0.5;
+    float2 uv = ndcToUv(ndcPos);
     return uv;
 }
 
@@ -140,7 +155,7 @@ float3 calcCovariance2D(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 
 
 void decomposeCovariance(float3 cov2d, out float2 v1, out float2 v2)
 {
-    #if 0 // does not quite give the correct results?
+    #if 0// does not quite give the correct results?
 
     // https://jsfiddle.net/mattrossman/ehxmtgw6/
     // References:
@@ -204,20 +219,43 @@ void csCoarseTileBin(uint3 dti : SV_DispatchThreadID)
     SplatScene splatScene = loadSplatScene();
     uint threadID = dti.x;
 
-    if (threadID >= splatScene.vertexCount)
+    if (threadID >= 1)//splatScene.vertexCount)
         return;
 
-    float3 worldPos = loadSplatPosition(splatScene, threadID);
-    float4 clipPos = worldToClip(worldPos);
-    if (any(abs(clipPos.xyz) > clipPos.www))
+    float3 worldPos = loadSplatPosition(splatScene, 0);
+    float3 viewPos = worldToView(worldPos);
+    float4 clipPos = viewToClip(viewPos);
+    if (any(abs(clipPos.z) > clipPos.w))
         return;
 
-    float2 uvPos = clipToUv(clipPos);
+    float3 splatScale = loadSplatScale(splatScene, threadID);
+    float splatSphereCorner = max(splatScale.x, max(splatScale.y, splatScale.z)) * 2.0;
+    float4 clipEnd = viewToClip(viewPos + length(splatScale));
+
+    float2 uvCenter = ndcToUv(clipPos.xy / clipPos.w);
+    float2 uvCorner = ndcToUv(clipEnd.xy / clipEnd.w);
+    float2 uvDiff = abs(uvCorner - uvCenter);
+    float2 aabbBegin = saturate(uvCenter - uvDiff);
+    float2 aabbEnd = saturate(uvCenter + uvDiff);
     
-    uint2 tileCoord = (uint2)floor(uvPos.xy * (float2)g_viewSize / float(COARSE_TILE_SIZE));
+    uint2 tileBegin = (uint2)floor(aabbBegin.xy * (float2)g_viewSize / float(COARSE_TILE_SIZE));
+    uint2 tileEnd = (uint2)floor(aabbEnd.xy * (float2)g_viewSize / float(COARSE_TILE_SIZE));
+    uint unused = 1;
 
-    uint unused;
-    InterlockedAdd(g_outCoarseTileCounts[tileCoord.x + tileCoord.y * g_coarseTileViewDims.x], 1, unused);
+    for (uint i = tileBegin.x; i <= tileEnd.x; ++i)
+    {
+        for (uint j = tileBegin.y; j <= tileEnd.y; ++j)
+        {
+            uint2 tileCoord = uint2(i, j);
+            InterlockedAdd(g_outCoarseTileCounts[tileCoord.x + tileCoord.y * g_coarseTileViewDims.x], 1, unused);
+        }
+    }
+    
+
+    //float2 uvPos = clipToUv(clipPos);
+    //uint2 tileCoord = (uint2)floor(uvPos.xy * (float2)g_viewSize / float(COARSE_TILE_SIZE));
+
+    //InterlockedAdd(g_outCoarseTileCounts[tileCoord.x + tileCoord.y * g_coarseTileViewDims.x], 1, unused);
 }
 
 RWTexture2D<float4> g_colorBuffer : register(u0);

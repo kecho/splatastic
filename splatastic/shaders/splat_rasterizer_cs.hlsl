@@ -253,11 +253,18 @@ void csCoarseTileBin(uint3 dti : SV_DispatchThreadID, uint gti : SV_GroupThreadI
     float2 uvCenter = ndcToUv(clipPos.xy / clipPos.w);
     float2 uvCorner = ndcToUv(clipEnd.xy / clipEnd.w);
     float2 uvDiff = abs(uvCorner - uvCenter);
-    float2 aabbBegin = saturate(uvCenter - uvDiff);
-    float2 aabbEnd = saturate(uvCenter + uvDiff);
+    float2 aabbBegin = uvCenter - uvDiff;
+    float2 aabbEnd = uvCenter + uvDiff;
+
+    if (any(uvDiff < 0.1 * g_viewSizeInv.xy) || any(aabbBegin >= float2(1.0,1.0)) || any(aabbEnd <= float2(0.0,0.0)))
+        return;
+
+    aabbBegin = saturate(aabbBegin);
+    aabbEnd = saturate(aabbEnd);
     
     uint2 tileBegin = (uint2)floor(aabbBegin.xy * (float2)g_viewSize / float(COARSE_TILE_SIZE));
     uint2 tileEnd = (uint2)floor(aabbEnd.xy * (float2)g_viewSize / float(COARSE_TILE_SIZE));
+
 
     for (uint i = tileBegin.x; i <= tileEnd.x; ++i)
     {
@@ -350,18 +357,16 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
 
         float2 axis0, axis1;
         decomposeCovariance(cov2d, axis0, axis1);
-
-        float axis0Len = length(axis0);
-        float axis1Len = length(axis1);
-
-        axis0 *= rcp(axis0Len);
-        axis1 *= rcp(axis1Len);
+    
+        float lenAxis0 = dot(axis0, axis0);
+        float lenAxis1 = dot(axis1, axis1);
 
         float2 splatRelUv = (splatScreenUv - screenUv) * (float2)g_viewSize.xy;
-        float2 localCoord = float2(dot(axis0, splatRelUv), dot(axis1, splatRelUv));
+        float2 localCoord = abs(float2(dot(axis0, splatRelUv), dot(axis1, splatRelUv))) / float2(lenAxis0, lenAxis1);
+        
 
-        //float3 debugCol = all(abs(localCoord) < float2(axis0Len, axis1Len)) ? float3(1,0,0) : float3(0,0,0);
-        float3 debugCol = length(localCoord / float2(axis0Len, axis1Len)) < 1.0 ? float3(1,0,0) : float3(0,0,0);
+        //float3 debugCol = all(abs(localCoord) < float2(lenAxis0, lenAxis1)) ? float3(1,0,0) : float3(0,0,0);
+        float3 debugCol = exp(-length(localCoord * 4.0));// * 4.0).xxx;
         float weight = (splatClipPos.z > splatClipPos.w) ? 0.0 : 1.0;
         col += float4(debugCol * weight, weight);
     }

@@ -3,6 +3,8 @@ py.install_sources(
         'clear_target_cs.hlsl',
         'debug_font.hlsl',
         'overlay_cs.hlsl',
+        'prefix_sum.hlsl',
+        'thread_utils.hlsl',
         'splat_rasterizer_cs.hlsl',
     ],
     subdir:'splatastic/shaders'

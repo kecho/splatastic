@@ -10,6 +10,7 @@ py.install_sources(
         'splat_rasterizer.py',
         'test.py',
         'transform.py',
+        'prefix_sum.py',
         'vec.py',
         'utilities.py'
     ],

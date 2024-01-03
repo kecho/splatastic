@@ -6,6 +6,7 @@ from . import native
 from . import debug_font
 from . import overlay
 from . import utilities
+from . import prefix_sum
 
 g_wave_size = 0
 g_module_path = os.path.dirname(pathlib.Path(sys.modules[__name__].__file__)) + "\\"
@@ -56,6 +57,7 @@ def init_module():
     debug_font.init()
     overlay.init()
     utilities.init()
+    prefix_sum.init()
 
 def shutdown_module():
     native.shutdown()

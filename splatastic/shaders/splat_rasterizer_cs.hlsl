@@ -8,6 +8,9 @@ cbuffer Constants : register(b0)
     uint2 g_coarseTileViewDims;
     float2 g_coarseTileViewDimsInv;
 
+    uint g_coarseTileRecordMax;
+    uint3 g_unused0;
+
     float4x4 g_view;
     float4x4 g_proj;
 };
@@ -39,8 +42,6 @@ float2 clipToUv(float4 clipPos)
     float2 uv = ndcToUv(ndcPos);
     return uv;
 }
-
-RWBuffer<uint> g_outCoarseTileCounts : register(u0);
 
 Buffer<uint> g_splatMetadataBuffer : register(t0);
 ByteAddressBuffer g_splatPayloadBuffer : register(t1);
@@ -78,12 +79,14 @@ float loadSplatAlpha(SplatScene scene, int index)
 
 float3 loadSplatScale(SplatScene scene, int index)
 {
-    return asfloat(scene.payload.Load3(index * scene.stride + SPLAT_SCALE_OFFSET));
+    return float3(1,1,1);
+    //return asfloat(scene.payload.Load3(index * scene.stride + SPLAT_SCALE_OFFSET));
 }
 
 float4 loadSplatRotation(SplatScene scene, int index)
 {
-    return asfloat(scene.payload.Load4(index * scene.stride + SPLAT_ROT_OFFSET));
+    return float4(0,0,0,0);
+    //return asfloat(scene.payload.Load4(index * scene.stride + SPLAT_ROT_OFFSET));
 }
 
 //// taken from UnityGaussianSplatting ////
@@ -212,25 +215,42 @@ void decomposeCovariance(float3 cov2d, out float2 v1, out float2 v2)
 
 /////
 
+uint2 packCoarseTile(uint tileAddress, uint tileOffset, uint splatID)
+{
+    return uint2((tileAddress & 0xFFFF) | (tileOffset << 16), splatID);
+}
+
+void unpackCoarseTile(uint2 coarseTile, out uint tileAddress, out uint tileOffset, out uint splatID)
+{
+    tileAddress = coarseTile.x & 0xFFFF;
+    tileOffset = coarseTile.x >> 16;
+    splatID = coarseTile.y;
+}
+
+RWBuffer<uint> g_outCoarseTileCounts : register(u0);
+RWBuffer<uint> g_outCoarseTileRecordCounter : register(u1);
+RWBuffer<uint2> g_outCoarseTileRecordBuffer : register(u2);
+
 #define COARSE_TILE_BIN_THREADS 128
 [numthreads(COARSE_TILE_BIN_THREADS, 1, 1)]
-void csCoarseTileBin(uint3 dti : SV_DispatchThreadID)
+void csCoarseTileBin(uint3 dti : SV_DispatchThreadID, uint gti : SV_GroupThreadID)
 {
     SplatScene splatScene = loadSplatScene();
     uint threadID = dti.x;
 
-    if (threadID >= 1)//splatScene.vertexCount)
+    if (threadID >= splatScene.vertexCount)
         return;
 
-    float3 worldPos = loadSplatPosition(splatScene, 0);
+    uint splatID = threadID;
+    float3 worldPos = loadSplatPosition(splatScene, splatID);
     float3 viewPos = worldToView(worldPos);
     float4 clipPos = viewToClip(viewPos);
     if (any(abs(clipPos.z) > clipPos.w))
         return;
 
-    float3 splatScale = loadSplatScale(splatScene, threadID);
-    float splatSphereCorner = max(splatScale.x, max(splatScale.y, splatScale.z)) * 2.0;
-    float4 clipEnd = viewToClip(viewPos + length(splatScale));
+    float3 splatScale = loadSplatScale(splatScene, splatID);
+    float rad = length(splatScale) * 0.5 * sqrt(3.0);
+    float4 clipEnd = viewToClip(viewPos + rad);
 
     float2 uvCenter = ndcToUv(clipPos.xy / clipPos.w);
     float2 uvCorner = ndcToUv(clipEnd.xy / clipEnd.w);
@@ -240,22 +260,22 @@ void csCoarseTileBin(uint3 dti : SV_DispatchThreadID)
     
     uint2 tileBegin = (uint2)floor(aabbBegin.xy * (float2)g_viewSize / float(COARSE_TILE_SIZE));
     uint2 tileEnd = (uint2)floor(aabbEnd.xy * (float2)g_viewSize / float(COARSE_TILE_SIZE));
-    uint unused = 1;
 
     for (uint i = tileBegin.x; i <= tileEnd.x; ++i)
     {
         for (uint j = tileBegin.y; j <= tileEnd.y; ++j)
         {
             uint2 tileCoord = uint2(i, j);
-            InterlockedAdd(g_outCoarseTileCounts[tileCoord.x + tileCoord.y * g_coarseTileViewDims.x], 1, unused);
+            uint tileAddress = tileCoord.x + tileCoord.y * g_coarseTileViewDims.x;
+            uint coarseTileOffset = 0;
+            uint globalOffset = 0;
+            InterlockedAdd(g_outCoarseTileCounts[tileAddress], 1, coarseTileOffset);
+            InterlockedAdd(g_outCoarseTileRecordCounter[0], 1, globalOffset);
+
+            uint2 packedTile = packCoarseTile(tileAddress, coarseTileOffset, splatID);
+            g_outCoarseTileRecordBuffer[globalOffset] = packedTile;
         }
     }
-    
-
-    //float2 uvPos = clipToUv(clipPos);
-    //uint2 tileCoord = (uint2)floor(uvPos.xy * (float2)g_viewSize / float(COARSE_TILE_SIZE));
-
-    //InterlockedAdd(g_outCoarseTileCounts[tileCoord.x + tileCoord.y * g_coarseTileViewDims.x], 1, unused);
 }
 
 RWTexture2D<float4> g_colorBuffer : register(u0);
@@ -303,7 +323,7 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
         if (splatClipPos.z > splatClipPos.w)
             debugCol = float3(0,0,0);
 
-        col += debugCol;
+        col += debugCol * 0.5;
     }
 
     g_colorBuffer[dti.xy] = float4(col, 1.0);

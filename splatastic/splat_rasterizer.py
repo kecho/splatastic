@@ -3,12 +3,16 @@ import math
 from . import utilities
 from . import camera
 
+g_coarse_tile_record_bytes = 32 * 1024 * 1024 # 32 mb
 CoarseTileSize = 32
 
 class SplatRaster:
 
     def __init__(self):
         self.m_tile_counter = None
+        self.m_coarse_tile_records = None
+        self.m_coarse_tile_records_counter = None
+        self.m_coarse_tile_record_max = 0
         self.m_color_buffer = None
         self.m_constants = None
         self.m_max_width = 0
@@ -29,6 +33,7 @@ class SplatRaster:
         constants_data = [
             int(width), int(height), float(1.0/width), float(1.0/height),
             int(coarse_tile_count_x), int(coarse_tile_count_y), float(1.0/coarse_tile_count_x), float(1.0/coarse_tile_count_y),
+            int(self.m_coarse_tile_record_max), 0, 0, 0,
         ]
         constants_data.extend(view_matrix.transpose().flatten().tolist())
         constants_data.extend(proj_matrix.transpose().flatten().tolist())
@@ -43,6 +48,22 @@ class SplatRaster:
         cmd_list.upload_resource(source = constants_data, destination =  self.m_constants)
 
     def update_view_resources(self, width, height, coarse_tile_count_x, coarse_tile_count_y):
+        if self.m_coarse_tile_records is None:
+            coarse_tile_record_stride = 4 * 2
+            self.m_coarse_tile_record_max = utilities.divup(g_coarse_tile_record_bytes, coarse_tile_record_stride)
+            self.m_coarse_tile_records = g.Buffer(
+                "CoarseTileRecord",
+                format = g.Format.RG_32_UINT,
+                stride = coarse_tile_record_stride,
+                element_count = self.m_coarse_tile_record_max)
+
+        if self.m_coarse_tile_records_counter is None:
+            self.m_coarse_tile_records_counter = g.Buffer(
+                "CoarseTileRecordCounter",
+                format = g.Format.R32_UINT,
+                stride = 4,
+                element_count = 1)
+
         if width <= self.m_max_width and height <= self.m_max_height:
             return
 
@@ -62,6 +83,7 @@ class SplatRaster:
 
     def clear_view_buffers(self, cmd_list, width, height, coarse_tile_count_x, coarse_tile_count_y):
         utilities.clear_uint_buffer(cmd_list, 0, self.m_tile_counter, 0, coarse_tile_count_x * coarse_tile_count_y)
+        utilities.clear_uint_buffer(cmd_list, 0, self.m_coarse_tile_records_counter, 0, 1)
 
     def dispatch_coarse_tile_bin(self, cmd_list, scene_data):
     
@@ -72,7 +94,7 @@ class SplatRaster:
             shader = self.m_coarse_dispatch_bin_shader,
             constants = self.m_constants,
             inputs = [ scene_data.metadata_buffer, scene_data.payload_buffer ],
-            outputs = self.m_tile_counter,
+            outputs = [ self.m_tile_counter, self.m_coarse_tile_records_counter, self.m_coarse_tile_records ],
             x = utilities.divup(scene_data.vertex_count, coarse_tile_bin_threads), y = 1, z = 1)
 
     def dispatch_raster_splat(self, cmd_list, scene_data, width, height):

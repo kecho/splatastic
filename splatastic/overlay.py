@@ -33,6 +33,7 @@ def render_overlay(cmd_list, rasterizer, color_buffer, output_texture, view_sett
         inputs = [
             debug_font.font_texture,
             rasterizer.m_tile_counter,
+            rasterizer.m_coarse_tile_list_offsets,
             color_buffer
         ],
 

@@ -79,14 +79,12 @@ float loadSplatAlpha(SplatScene scene, int index)
 
 float3 loadSplatScale(SplatScene scene, int index)
 {
-    return float3(1,1,1);
-    //return asfloat(scene.payload.Load3(index * scene.stride + SPLAT_SCALE_OFFSET));
+    return asfloat(scene.payload.Load3(index * scene.stride + SPLAT_SCALE_OFFSET));
 }
 
 float4 loadSplatRotation(SplatScene scene, int index)
 {
-    return float4(0,0,0,0);
-    //return asfloat(scene.payload.Load4(index * scene.stride + SPLAT_ROT_OFFSET));
+    return asfloat(scene.payload.Load4(index * scene.stride + SPLAT_ROT_OFFSET));
 }
 
 //// taken from UnityGaussianSplatting ////
@@ -249,7 +247,7 @@ void csCoarseTileBin(uint3 dti : SV_DispatchThreadID, uint gti : SV_GroupThreadI
         return;
 
     float3 splatScale = loadSplatScale(splatScene, splatID);
-    float rad = length(splatScale) * 0.5 * sqrt(3.0);
+    float rad = length(splatScale) * 0.7 * sqrt(3.0);
     float4 clipEnd = viewToClip(viewPos + rad);
 
     float2 uvCenter = ndcToUv(clipPos.xy / clipPos.w);
@@ -278,6 +276,42 @@ void csCoarseTileBin(uint3 dti : SV_DispatchThreadID, uint gti : SV_GroupThreadI
     }
 }
 
+
+Buffer<uint> g_createArgsCounterBuffer : register(t0);
+RWBuffer<uint4> g_outArgsBuffer : register(u0);
+
+[numthreads(1,1,1)]
+void csCreateCoarseTileDispatchArgs(int3 dti : SV_DispatchThreadID)
+{
+    g_outArgsBuffer[0] = uint4(((g_createArgsCounterBuffer[0] + 63) / 64), 1, 1, 0);
+}
+
+Buffer<uint> g_createListRecordCountBuffer : register(t0);
+Buffer<uint> g_createListOffsets : register(t1);
+Buffer<uint2> g_createListRecords : register(t2);
+RWBuffer<uint> g_outCreateListData : register(u0);
+
+[numthreads(64,1,1)]
+void csCreateCoarseTileList(uint3 dti : SV_DispatchThreadID)
+{
+    uint threadID = dti.x;
+    uint recordCount = g_createListRecordCountBuffer[0];
+    if (threadID >= recordCount)
+        return;
+
+    uint2 coarseListRecord = g_createListRecords[threadID];
+    uint tileAddress, tileOffset, splatID;
+    unpackCoarseTile(coarseListRecord, tileAddress, tileOffset, splatID);
+
+    uint outputOffset = g_createListOffsets[tileAddress] + tileOffset;
+    g_outCreateListData[outputOffset] = splatID;
+}
+
+//Buffer<uint> g_splatMetadataBuffer : register(t0);
+//ByteAddressBuffer g_splatPayloadBuffer : register(t1);
+Buffer<uint> g_coarseTileOffsets : register(t2);
+Buffer<uint> g_coarseTileCounts : register(t3);
+Buffer<uint> g_coarseTileData : register(t4);
 RWTexture2D<float4> g_colorBuffer : register(u0);
 
 [numthreads(8,8,1)]
@@ -288,15 +322,23 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
     if (any(dti.xy > g_viewSize.xy))
         return;
 
+    uint2 tileID = dti.xy / COARSE_TILE_SIZE;
+    uint tileAddress = tileID.x + tileID.y * g_coarseTileViewDims.x;
+    uint tileOffset = g_coarseTileOffsets[tileAddress];
+    uint tileCount = g_coarseTileCounts[tileAddress];
+
     float2 screenUv = (dti.xy + 0.5) * float2(g_viewSizeInv.xy);
 
-    float3 col = float3(0,0,0);
-    for (int i = 0; i < 1; ++i)
+    float4 col = float4(0,0,0,0);
+    tileCount = min(tileCount, 1000);
+    float weights = 0.0;
+    for (int i = 0; i < tileCount; ++i)
     {
-        float3 splatPos = loadSplatPosition(splatScene, i);
-        float3 splatScale = loadSplatScale(splatScene, i);
+        uint splatID = g_coarseTileData[tileOffset + i];
+        float3 splatPos = loadSplatPosition(splatScene, splatID);
+        float3 splatScale = loadSplatScale(splatScene, splatID);
     
-        float4 splatRotation = loadSplatRotation(splatScene, i);
+        float4 splatRotation = loadSplatRotation(splatScene, splatID);
         float3x3 splatTransform = calcMatrixFromRotationScale(splatRotation, splatScale);
 
         float3 cov3d0, cov3d1;
@@ -320,11 +362,10 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
 
         //float3 debugCol = all(abs(localCoord) < float2(axis0Len, axis1Len)) ? float3(1,0,0) : float3(0,0,0);
         float3 debugCol = length(localCoord / float2(axis0Len, axis1Len)) < 1.0 ? float3(1,0,0) : float3(0,0,0);
-        if (splatClipPos.z > splatClipPos.w)
-            debugCol = float3(0,0,0);
-
-        col += debugCol * 0.5;
+        float weight = (splatClipPos.z > splatClipPos.w) ? 0.0 : 1.0;
+        col += float4(debugCol * weight, weight);
     }
 
-    g_colorBuffer[dti.xy] = float4(col, 1.0);
+    col = col.w == 0 ? float4(0,0,0,0) : col / col.w;
+    g_colorBuffer[dti.xy] = col;
 }

@@ -2,14 +2,20 @@ import coalpy.gpu as g
 import math
 from . import utilities
 from . import camera
+from . import prefix_sum
 
-g_coarse_tile_record_bytes = 32 * 1024 * 1024 # 32 mb
+g_coarse_tile_record_bytes = 512 * 1024 * 1024 # 32 mb
+g_coarse_tile_list_data_bytes = 512 * 1024 * 1024 # 32 mb
+
 CoarseTileSize = 32
 
 class SplatRaster:
 
     def __init__(self):
         self.m_tile_counter = None
+        self.m_coarse_tile_args_buffer = None
+        self.m_coarse_tile_list_offsets = None
+        self.m_coarse_tile_list_data = None
         self.m_coarse_tile_records = None
         self.m_coarse_tile_records_counter = None
         self.m_coarse_tile_record_max = 0
@@ -17,6 +23,7 @@ class SplatRaster:
         self.m_constants = None
         self.m_max_width = 0
         self.m_max_height = 0
+        self.m_prefix_sum_args = None
         self.init_shaders()
         return
 
@@ -26,6 +33,8 @@ class SplatRaster:
 
     def init_shaders(self):
         self.m_coarse_dispatch_bin_shader = g.Shader(file = "shaders/splat_rasterizer_cs.hlsl", name="CoarseTileBin", main_function = "csCoarseTileBin")
+        self.m_create_coarse_tile_args_shader = g.Shader(file = "shaders/splat_rasterizer_cs.hlsl", name="CreateCoarseTileDispatchArgs", main_function = "csCreateCoarseTileDispatchArgs")
+        self.m_create_coarse_tile_list_shader = g.Shader(file = "shaders/splat_rasterizer_cs.hlsl", name="CreateCoarseTileList", main_function = "csCreateCoarseTileList")
         self.m_raster_splat_shader = g.Shader(file = "shaders/splat_rasterizer_cs.hlsl", name="RasterSplats", main_function = "csRasterSplats")
 
     def update_constants(self, cmd_list, view_matrix, proj_matrix, width, height, coarse_tile_count_x, coarse_tile_count_y):
@@ -64,8 +73,25 @@ class SplatRaster:
                 stride = 4,
                 element_count = 1)
 
+        if self.m_coarse_tile_list_data is None:
+            coarse_tile_list_data_stride = 4
+            coarse_tile_list_data_max = utilities.divup(g_coarse_tile_list_data_bytes, coarse_tile_list_data_stride)
+            self.m_coarse_tile_list_data = g.Buffer(
+                "CoarseTileData",
+                format = g.Format.R32_UINT,
+                element_count = coarse_tile_list_data_max)
+
+        if self.m_coarse_tile_args_buffer is None:
+            self.m_coarse_tile_args_buffer = g.Buffer(
+                "CoarseTileArgsBuffer",
+                format = g.Format.RGBA_32_UINT,
+                usage = g.BufferUsage.IndirectArgs,
+                element_count = 1)
+
         if width <= self.m_max_width and height <= self.m_max_height:
             return
+
+        self.m_prefix_sum_args = prefix_sum.allocate_args(coarse_tile_count_x * coarse_tile_count_y)
 
         (self.m_max_width, self.m_max_height) = (width, height)
         self.m_tile_counter = g.Buffer(
@@ -85,7 +111,7 @@ class SplatRaster:
         utilities.clear_uint_buffer(cmd_list, 0, self.m_tile_counter, 0, coarse_tile_count_x * coarse_tile_count_y)
         utilities.clear_uint_buffer(cmd_list, 0, self.m_coarse_tile_records_counter, 0, 1)
 
-    def dispatch_coarse_tile_bin(self, cmd_list, scene_data):
+    def dispatch_coarse_tile_bin(self, cmd_list, scene_data, coarse_tile_count_x, coarse_tile_count_y):
     
         #keep in sync with csCoarseTileBin
         coarse_tile_bin_threads = 128
@@ -97,10 +123,34 @@ class SplatRaster:
             outputs = [ self.m_tile_counter, self.m_coarse_tile_records_counter, self.m_coarse_tile_records ],
             x = utilities.divup(scene_data.vertex_count, coarse_tile_bin_threads), y = 1, z = 1)
 
+        self.m_coarse_tile_list_offsets = prefix_sum.run(cmd_list, self.m_tile_counter, self.m_prefix_sum_args, is_exclusive = True, input_counts = coarse_tile_count_x * coarse_tile_count_y)
+
+        cmd_list.dispatch(
+            shader = self.m_create_coarse_tile_args_shader,
+            inputs = self.m_coarse_tile_records_counter,
+            outputs = self.m_coarse_tile_args_buffer,
+            x = 1, y = 1, z = 1)
+
+        cmd_list.dispatch(
+            shader = self.m_create_coarse_tile_list_shader,
+            constants = self.m_constants,
+            inputs = [
+                self.m_coarse_tile_records_counter,
+                self.m_coarse_tile_list_offsets,
+                self.m_coarse_tile_records ],
+            outputs = [ self.m_coarse_tile_list_data ],
+            indirect_args = self.m_coarse_tile_args_buffer)
+
+
     def dispatch_raster_splat(self, cmd_list, scene_data, width, height):
         cmd_list.dispatch(
             shader = self.m_raster_splat_shader,
-            inputs = [ scene_data.metadata_buffer, scene_data.payload_buffer ],
+            inputs = [
+                scene_data.metadata_buffer,
+                scene_data.payload_buffer,
+                self.m_coarse_tile_list_offsets,
+                self.m_tile_counter,
+                self.m_coarse_tile_list_data ],
             outputs = self.m_color_buffer,
             constants = self.m_constants,
             x = utilities.divup(width, 8), y = utilities.divup(height, 8), z = 1)
@@ -121,6 +171,6 @@ class SplatRaster:
             width, height,
             coarse_tile_count_x, coarse_tile_count_y)
 
-        self.dispatch_coarse_tile_bin(cmd_list, scene_data)
+        self.dispatch_coarse_tile_bin(cmd_list, scene_data, coarse_tile_count_x, coarse_tile_count_y)
 
         self.dispatch_raster_splat(cmd_list, scene_data, width, height)

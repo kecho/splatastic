@@ -8,7 +8,8 @@ SamplerState g_fontSampler : register(s0);
 
 Texture2D<float4> g_debugFont : register(t0);
 Buffer<uint> g_coarseTileCounts : register(t1);
-Texture2D<float4> g_colorBuffer : register(t2);
+Buffer<uint> g_coarseTileOffsets : register(t2);
+Texture2D<float4> g_colorBuffer : register(t3);
 
 RWTexture2D<float4> g_output : register(u0);
 
@@ -27,7 +28,7 @@ cbuffer Constants : register(b0)
 float4 drawTile(int2 coord, int tileSize, int tileCount)
 {
     float borderThickness = BORDER_PIXELS / FONT_BLOCK_SIZE;
-    const int numberOfDigits = 4;
+    const int numberOfDigits = 8;
     float fontSquare = FONT_BLOCK_SIZE/TILE_SIZE;
     float2 fontBlock = float2(fontSquare * numberOfDigits, fontSquare);
 
@@ -44,8 +45,8 @@ float4 drawTile(int2 coord, int tileSize, int tileCount)
     float4 tileColor = TILE_COLOR;
     if (isFont)
     {
-        float4 fontCol = Font::drawNumber(g_debugFont, g_fontSampler, fontTileUv / fontBlock, numberOfDigits, tileCount);
-        float4 fontColShadow = Font::drawNumber(g_debugFont, g_fontSampler, (fontTileUv - 2.0 * 1.5/TILE_SIZE) / fontBlock, numberOfDigits, tileCount);
+        float4 fontCol = Font::drawNumber(g_debugFont, g_fontSampler, 1 * fontTileUv / fontBlock, numberOfDigits, tileCount);
+        float4 fontColShadow = Font::drawNumber(g_debugFont, g_fontSampler, 1 * (fontTileUv - 2.0 * 1.5/TILE_SIZE) / fontBlock, numberOfDigits, tileCount);
         tileColor.rgba = lerp(tileColor.rgba, float4(0,0,0,1), fontColShadow.a);
         tileColor.rgba = lerp(tileColor.rgba, fontCol.rgba, fontCol.a);
     }
@@ -97,7 +98,8 @@ void csMainOverlay(
     uint tileCoord = groupID.x + groupID.y * g_coarseTileViewDims.x;
     float2 tileUV = (gti.xy + 0.5) / float2(32.0, 32.0);
     uint coarseCount = g_coarseTileCounts[tileCoord];
-    float4 tileColor = coarseCount == 0 ? float4(0,0,0,0) : drawTile(dti.xy, 32, coarseCount);
+    uint coarseOffsets = g_coarseTileOffsets[tileCoord];
+    float4 tileColor = 0;//coarseCount == 0 ? float4(0,0,0,0) : drawTile(dti.xy, 32, coarseOffsets);
     float4 inputColor = g_colorBuffer.Load(float3(dti.xy, 0));
     g_output[dti.xy] = float4(lerp(inputColor.rgb, tileColor.rgb, tileColor.a), 1.0);
 }

@@ -4,8 +4,8 @@ from . import utilities
 from . import camera
 from . import prefix_sum
 
-g_coarse_tile_record_bytes = 512 * 1024 * 1024 # 32 mb
-g_coarse_tile_list_data_bytes = 512 * 1024 * 1024 # 32 mb
+g_coarse_tile_record_bytes = 512 * 1024 * 1024
+g_coarse_tile_list_data_bytes = 512 * 1024 * 1024
 
 CoarseTileSize = 32
 
@@ -65,6 +65,7 @@ class SplatRaster:
                 format = g.Format.RG_32_UINT,
                 stride = coarse_tile_record_stride,
                 element_count = self.m_coarse_tile_record_max)
+            print ("Max records: " + str(self.m_coarse_tile_record_max))
 
         if self.m_coarse_tile_records_counter is None:
             self.m_coarse_tile_records_counter = g.Buffer(
@@ -80,6 +81,7 @@ class SplatRaster:
                 "CoarseTileData",
                 format = g.Format.R32_UINT,
                 element_count = coarse_tile_list_data_max)
+            print ("Max tile results: " + str(coarse_tile_list_data_max))
 
         if self.m_coarse_tile_args_buffer is None:
             self.m_coarse_tile_args_buffer = g.Buffer(

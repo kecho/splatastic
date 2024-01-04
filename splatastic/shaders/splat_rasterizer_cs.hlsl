@@ -1,5 +1,7 @@
 #define COARSE_TILE_SIZE 32
 
+#define USE_TEST_DATA 0
+
 cbuffer Constants : register(b0)
 {
     uint2 g_viewSize;
@@ -56,7 +58,11 @@ struct SplatScene
 SplatScene loadSplatScene()
 {
     SplatScene scene;
+#if USE_TEST_DATA
+    scene.vertexCount = 3;
+#else
     scene.vertexCount = g_splatMetadataBuffer[0];
+#endif
     scene.stride = g_splatMetadataBuffer[1];
     scene.payload = g_splatPayloadBuffer;
     return scene;
@@ -69,22 +75,41 @@ SplatScene loadSplatScene()
 
 float3 loadSplatPosition(SplatScene scene, int index)
 {
+#if USE_TEST_DATA
+    return float3(4 * index, 0.0, 0.0);
+#else
     return asfloat(scene.payload.Load3(index * scene.stride + SPLAT_POS_OFFSET));
+#endif
 }
 
 float loadSplatAlpha(SplatScene scene, int index)
 {
+#if USE_TEST_DATA
+    return 1.0;
+#else
     return asfloat(scene.payload.Load(index * scene.stride + SPLAT_ALPHA_OFFSET));
+#endif
 }
 
 float3 loadSplatScale(SplatScene scene, int index)
 {
+#if USE_TEST_DATA
+    if (index == 0)
+        return float3(2,1,1);
+    else
+        return float3(1,1,1);
+#else
     return asfloat(scene.payload.Load3(index * scene.stride + SPLAT_SCALE_OFFSET));
+#endif
 }
 
 float4 loadSplatRotation(SplatScene scene, int index)
 {
+#if USE_TEST_DATA
+    return float4(0,0,0,0);
+#else
     return asfloat(scene.payload.Load4(index * scene.stride + SPLAT_ROT_OFFSET));
+#endif
 }
 
 //// taken from UnityGaussianSplatting ////
@@ -243,34 +268,33 @@ void csCoarseTileBin(uint3 dti : SV_DispatchThreadID, uint gti : SV_GroupThreadI
     float3 worldPos = loadSplatPosition(splatScene, splatID);
     float3 viewPos = worldToView(worldPos);
     float4 clipPos = viewToClip(viewPos);
-    if (any(abs(clipPos.z) > clipPos.w))
+    if (any(abs(clipPos.z) >= clipPos.w) || any(abs(clipPos.xy) >= clipPos.w * 2.0))
         return;
 
     float3 splatScale = loadSplatScale(splatScene, splatID);
-    float rad = length(splatScale) * 0.7 * sqrt(3.0);
+    float rad = length(splatScale);
     float4 clipEnd = viewToClip(viewPos + rad);
 
     float2 uvCenter = ndcToUv(clipPos.xy / clipPos.w);
     float2 uvCorner = ndcToUv(clipEnd.xy / clipEnd.w);
-    float2 uvDiff = abs(uvCorner - uvCenter);
+    float2 uvDiff = abs(uvCorner - uvCenter) * 1.9;
     float2 aabbBegin = uvCenter - uvDiff;
     float2 aabbEnd = uvCenter + uvDiff;
 
-    if (any(uvDiff < 0.1 * g_viewSizeInv.xy) || any(aabbBegin >= float2(1.0,1.0)) || any(aabbEnd <= float2(0.0,0.0)))
+    if (any(uvDiff < 16.0 * g_viewSizeInv.xy) || any(uvDiff > 4.0) || any(aabbBegin >= float2(1.0,1.0)) || any(aabbEnd <= float2(0.0,0.0)))
         return;
 
     aabbBegin = saturate(aabbBegin);
     aabbEnd = saturate(aabbEnd);
     
-    uint2 tileBegin = (uint2)floor(aabbBegin.xy * (float2)g_viewSize / float(COARSE_TILE_SIZE));
-    uint2 tileEnd = (uint2)floor(aabbEnd.xy * (float2)g_viewSize / float(COARSE_TILE_SIZE));
+    int2 tileBegin = (int2)floor(aabbBegin.xy * (float2)g_viewSize / float(COARSE_TILE_SIZE));
+    int2 tileEnd = (int2)floor(aabbEnd.xy * (float2)g_viewSize / float(COARSE_TILE_SIZE));
 
-
-    for (uint i = tileBegin.x; i <= tileEnd.x; ++i)
+    for (int i = tileBegin.x; i <= tileEnd.x; ++i)
     {
-        for (uint j = tileBegin.y; j <= tileEnd.y; ++j)
+        for (int j = tileBegin.y; j <= tileEnd.y; ++j)
         {
-            uint2 tileCoord = uint2(i, j);
+            uint2 tileCoord = int2(i, j);
             uint tileAddress = tileCoord.x + tileCoord.y * g_coarseTileViewDims.x;
             uint coarseTileOffset = 0;
             uint globalOffset = 0;
@@ -337,15 +361,15 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
     float2 screenUv = (dti.xy + 0.5) * float2(g_viewSizeInv.xy);
 
     float4 col = float4(0,0,0,0);
-    tileCount = min(tileCount, 1000);
+    tileCount = min(tileCount, 250);
     float weights = 0.0;
     for (int i = 0; i < tileCount; ++i)
     {
         uint splatID = g_coarseTileData[tileOffset + i];
         float3 splatPos = loadSplatPosition(splatScene, splatID);
         float3 splatScale = loadSplatScale(splatScene, splatID);
-    
         float4 splatRotation = loadSplatRotation(splatScene, splatID);
+    
         float3x3 splatTransform = calcMatrixFromRotationScale(splatRotation, splatScale);
 
         float3 cov3d0, cov3d1;
@@ -357,20 +381,25 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
 
         float2 axis0, axis1;
         decomposeCovariance(cov2d, axis0, axis1);
-    
+
+#if 1
         float lenAxis0 = dot(axis0, axis0);
         float lenAxis1 = dot(axis1, axis1);
 
-        float2 splatRelUv = (splatScreenUv - screenUv) * (float2)g_viewSize.xy;
-        float2 localCoord = abs(float2(dot(axis0, splatRelUv), dot(axis1, splatRelUv))) / float2(lenAxis0, lenAxis1);
-        
+        float2 splatRelUv = (splatScreenUv - screenUv) * (float2)g_viewSize;
+        splatRelUv = float2(dot(axis0, splatRelUv), dot(axis1, splatRelUv))/float2(lenAxis0, lenAxis1);
 
-        //float3 debugCol = all(abs(localCoord) < float2(lenAxis0, lenAxis1)) ? float3(1,0,0) : float3(0,0,0);
-        float3 debugCol = exp(-length(localCoord * 4.0));// * 4.0).xxx;
-        float weight = (splatClipPos.z > splatClipPos.w) ? 0.0 : 1.0;
-        col += float4(debugCol * weight, weight);
+        float2 localCoord = splatRelUv;
+#endif
+        
+        //float4 debugCol = float4(length(localCoord).xxx, 1.0);
+        float4 debugCol = float4(exp(-dot(localCoord, localCoord)).xxx, 1.0);
+        debugCol.w *= (abs(splatClipPos.z) > splatClipPos.w) ? 0.0 : 1.0;
+        col += debugCol;
     }
 
-    col = col.w == 0 ? float4(0,0,0,0) : col / col.w;
-    g_colorBuffer[dti.xy] = col;
+    col = col.w == 0 ? float4(0,0,0,0) : col;// / col.w;
+    if (tileOffset >= g_coarseTileRecordMax)
+        col.rgb = float3(1,0,0);
+    g_colorBuffer[dti.xy] = col * 0.5;
 }

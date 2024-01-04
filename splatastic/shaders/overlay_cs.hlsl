@@ -99,7 +99,8 @@ void csMainOverlay(
     float2 tileUV = (gti.xy + 0.5) / float2(32.0, 32.0);
     uint coarseCount = g_coarseTileCounts[tileCoord];
     uint coarseOffsets = g_coarseTileOffsets[tileCoord];
-    float4 tileColor = 0;//coarseCount == 0 ? float4(0,0,0,0) : drawTile(dti.xy, 32, coarseOffsets);
+    float4 tileColor = 0;//coarseCount == 0 ? float4(0,0,0,0) : drawTile(dti.xy, 32, coarseCount);
+    tileColor += coarseCount > 100000 ? float4(0.5, 0.0, 0.0, 0.3): float4(0,0,0,0);
     float4 inputColor = g_colorBuffer.Load(float3(dti.xy, 0));
     g_output[dti.xy] = float4(lerp(inputColor.rgb, tileColor.rgb, tileColor.a), 1.0);
 }

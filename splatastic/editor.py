@@ -1,4 +1,5 @@
 import coalpy.gpu as g
+import coalpy.utils
 import numpy as np
 import inspect
 import os.path
@@ -42,6 +43,9 @@ class EditorViewport:
         self.m_can_move_pressed = False
         self.m_can_orbit_pressed = False
         self.m_last_mouse = (0.0, 0.0)
+
+        #profiler
+        self.m_profiler = None
 
         #camera settings
         self.m_cam_move_speed = 4.0
@@ -222,7 +226,8 @@ class Editor:
     def createToolPanels(self):
         return {
             'view_panel' : EditorPanel("View Settings", False),
-            'scene_panel' : EditorPanel("Scene", False)
+            'scene_panel' : EditorPanel("Scene", False),
+            'profiler' : EditorPanel("Profiler", False)
         }
 
     def save_editor_state(self):
@@ -304,6 +309,19 @@ class Editor:
 
                 self.m_selected_viewport.m_cam_move_speed = imgui.slider_float(label="moving speed", v = self.m_selected_viewport.m_cam_move_speed, v_min = 0.01, v_max = 16.0)
 
+        imgui.end()
+
+    def build_profiler(self, imgui : g.ImguiBuilder, implot : g.ImplotBuilder):
+        panel = self.m_tools['profiler']
+        if not panel.state:
+            self.m_profiler = None
+            return
+
+        if self.m_profiler is None:
+            self.m_profiler = coalpy.utils.Profiler()
+
+        panel.state = imgui.begin(panel.name, panel.state)
+        self.m_profiler.build_ui(imgui, implot)
         imgui.end()
 
     def build_scene_panel(self, imgui : g.ImguiBuilder):
@@ -398,6 +416,7 @@ class Editor:
         self.build_view_settings_panel(imgui)
         self.build_scene_panel(imgui)
         self.build_open_file(imgui)
+        self.build_profiler(imgui, implot)
 
         viewport_objs = [vo for vo in self.m_viewports.values()]
         for vp in viewport_objs: 
@@ -411,3 +430,14 @@ class Editor:
         self.setup_default_layout(root_d_id, imgui)
         self.m_ui_frame_it = self.m_ui_frame_it + 1
         return
+
+    def profiler_begin_capture(self):
+        if self.m_profiler is None:
+            return
+        self.m_profiler.begin_capture()
+
+    def profiler_end_capture(self):
+        if self.m_profiler is None:
+            return
+        self.m_profiler.end_capture()
+

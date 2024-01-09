@@ -11,6 +11,7 @@ py.install_sources(
         'test.py',
         'transform.py',
         'prefix_sum.py',
+        'radix_sort.py',
         'vec.py',
         'utilities.py'
     ],

@@ -24,6 +24,7 @@ def render_overlay(cmd_list, rasterizer, color_buffer, output_texture, view_sett
     cmd_list.begin_marker("overlay")
     overlay_flags = OverlayFlags.NONE
 
+    """
     cmd_list.dispatch(
         shader = g_overlay_shader,
         constants = [
@@ -43,5 +44,6 @@ def render_overlay(cmd_list, rasterizer, color_buffer, output_texture, view_sett
         x = math.ceil(w / 32),
         y = math.ceil(h / 32),
         z = 1)
+    """
     cmd_list.end_marker()
     

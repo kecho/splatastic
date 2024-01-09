@@ -238,21 +238,25 @@ void decomposeCovariance(float3 cov2d, out float2 v1, out float2 v2)
 
 /////
 
-uint2 packCoarseTile(uint tileAddress, uint tileOffset, uint splatID)
+#define BITS_PER_TILEADDRESS 14
+#define BITS_PER_CLIP_Z (32 - BITS_PER_TILEADDRESS)
+uint packCoarseTile(uint tileAddress, float clipZPos)
 {
-    return uint2((tileAddress & 0xFFFF) | (tileOffset << 16), splatID);
+
+    uint packedTileAddress = (tileAddress & ((1 << BITS_PER_TILEADDRESS) - 1));
+    uint packedZ = (uint)(saturate(clipZPos) * (float)((1 << BITS_PER_TILEADDRESS) - 1)) & ((1 << BITS_PER_TILEADDRESS) - 1);
+    return (packedTileAddress << BITS_PER_TILEADDRESS) | packedZ;
 }
 
-void unpackCoarseTile(uint2 coarseTile, out uint tileAddress, out uint tileOffset, out uint splatID)
+void unpackCoarseTile(uint coarseTile, out uint tileAddress, out float clipZPos)
 {
-    tileAddress = coarseTile.x & 0xFFFF;
-    tileOffset = coarseTile.x >> 16;
-    splatID = coarseTile.y;
+    tileAddress = coarseTile >> BITS_PER_TILEADDRESS;
+    clipZPos = (coarseTile & ((1 << BITS_PER_TILEADDRESS) - 1)) / (float)((1 << BITS_PER_TILEADDRESS) - 1);
 }
 
-RWBuffer<uint> g_outCoarseTileCounts : register(u0);
-RWBuffer<uint> g_outCoarseTileRecordCounter : register(u1);
-RWBuffer<uint2> g_outCoarseTileRecordBuffer : register(u2);
+RWBuffer<uint> g_outCoarseTileRecordCounter : register(u0);
+RWBuffer<uint> g_outCoarseTileRecordBuffer : register(u1);
+RWBuffer<uint> g_outCoarseTileRecordSplatIdBuffer : register(u2);
 
 #define COARSE_TILE_BIN_THREADS 128
 [numthreads(COARSE_TILE_BIN_THREADS, 1, 1)]
@@ -298,15 +302,14 @@ void csCoarseTileBin(uint3 dti : SV_DispatchThreadID, uint gti : SV_GroupThreadI
             uint tileAddress = tileCoord.x + tileCoord.y * g_coarseTileViewDims.x;
             uint coarseTileOffset = 0;
             uint globalOffset = 0;
-            InterlockedAdd(g_outCoarseTileCounts[tileAddress], 1, coarseTileOffset);
             InterlockedAdd(g_outCoarseTileRecordCounter[0], 1, globalOffset);
 
-            uint2 packedTile = packCoarseTile(tileAddress, coarseTileOffset, splatID);
+            uint packedTile = packCoarseTile(tileAddress, clipPos.z);
             g_outCoarseTileRecordBuffer[globalOffset] = packedTile;
+            g_outCoarseTileRecordSplatIdBuffer[globalOffset] = splatID;
         }
     }
 }
-
 
 Buffer<uint> g_createArgsCounterBuffer : register(t0);
 RWBuffer<uint4> g_outArgsBuffer : register(u0);
@@ -325,17 +328,17 @@ RWBuffer<uint> g_outCreateListData : register(u0);
 [numthreads(64,1,1)]
 void csCreateCoarseTileList(uint3 dti : SV_DispatchThreadID)
 {
-    uint threadID = dti.x;
-    uint recordCount = g_createListRecordCountBuffer[0];
-    if (threadID >= recordCount)
-        return;
+    //uint threadID = dti.x;
+    //uint recordCount = g_createListRecordCountBuffer[0];
+    //if (threadID >= recordCount)
+    //    return;
 
-    uint2 coarseListRecord = g_createListRecords[threadID];
-    uint tileAddress, tileOffset, splatID;
-    unpackCoarseTile(coarseListRecord, tileAddress, tileOffset, splatID);
+    //uint2 coarseListRecord = g_createListRecords[threadID];
+    //uint tileAddress, tileOffset, splatID;
+    //unpackCoarseTile(coarseListRecord, tileAddress, tileOffset, splatID);
 
-    uint outputOffset = g_createListOffsets[tileAddress] + tileOffset;
-    g_outCreateListData[outputOffset] = splatID;
+    //uint outputOffset = g_createListOffsets[tileAddress] + tileOffset;
+    //g_outCreateListData[outputOffset] = splatID;
 }
 
 //Buffer<uint> g_splatMetadataBuffer : register(t0);

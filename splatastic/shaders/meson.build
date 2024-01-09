@@ -4,6 +4,7 @@ py.install_sources(
         'debug_font.hlsl',
         'overlay_cs.hlsl',
         'prefix_sum.hlsl',
+        'radix_sort.hlsl',
         'thread_utils.hlsl',
         'splat_rasterizer_cs.hlsl',
     ],

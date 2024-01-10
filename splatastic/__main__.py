@@ -31,9 +31,9 @@ active_editor.load_scene(args.scene)
 rasterizer = splat_rasterizer.SplatRaster()
 
 def on_render(render_args : coalpy.gpu.RenderArgs):
+
     if render_args.width == 0 or render_args.height == 0:
         return False
-
 
     active_editor.build_ui(render_args.imgui, render_args.implot)
     scene_data = active_editor.scene_data

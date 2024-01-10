@@ -7,8 +7,7 @@
 SamplerState g_fontSampler : register(s0);
 
 Texture2D<float4> g_debugFont : register(t0);
-Buffer<uint> g_coarseTileCounts : register(t1);
-Buffer<uint> g_coarseTileOffsets : register(t2);
+Buffer<uint> g_coarseTileRanges : register(t1);
 Texture2D<float4> g_colorBuffer : register(t3);
 
 RWTexture2D<float4> g_output : register(u0);
@@ -97,10 +96,10 @@ void csMainOverlay(
 {
     uint tileCoord = groupID.x + groupID.y * g_coarseTileViewDims.x;
     float2 tileUV = (gti.xy + 0.5) / float2(32.0, 32.0);
-    uint coarseCount = g_coarseTileCounts[tileCoord];
-    uint coarseOffsets = g_coarseTileOffsets[tileCoord];
-    float4 tileColor = 0;//coarseCount == 0 ? float4(0,0,0,0) : drawTile(dti.xy, 32, coarseCount);
-    tileColor += coarseCount > 100000 ? float4(0.5, 0.0, 0.0, 0.3): float4(0,0,0,0);
+    int tileBegin = g_coarseTileRanges[2 * tileCoord];
+    int tileEnd = g_coarseTileRanges[2 * tileCoord + 1];
+    uint coarseCount = (tileEnd - tileBegin);
+    float4 tileColor = coarseCount == 0 ? float4(0,0,0,0) : drawTile(dti.xy, 32, coarseCount);
     float4 inputColor = g_colorBuffer.Load(float3(dti.xy, 0));
-    g_output[dti.xy] = float4(lerp(inputColor.rgb, tileColor.rgb, tileColor.a), 1.0);
+    g_output[dti.xy] = tileColor;//float4(lerp(inputColor.rgb, tileColor.rgb, tileColor.a), 1.0);
 }

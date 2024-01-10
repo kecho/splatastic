@@ -24,7 +24,6 @@ def render_overlay(cmd_list, rasterizer, color_buffer, output_texture, view_sett
     cmd_list.begin_marker("overlay")
     overlay_flags = OverlayFlags.NONE
 
-    """
     cmd_list.dispatch(
         shader = g_overlay_shader,
         constants = [
@@ -33,8 +32,7 @@ def render_overlay(cmd_list, rasterizer, color_buffer, output_texture, view_sett
 
         inputs = [
             debug_font.font_texture,
-            rasterizer.m_tile_counter,
-            rasterizer.m_coarse_tile_list_offsets,
+            rasterizer.m_coarse_tile_list_ranges,
             color_buffer
         ],
 
@@ -44,6 +42,5 @@ def render_overlay(cmd_list, rasterizer, color_buffer, output_texture, view_sett
         x = math.ceil(w / 32),
         y = math.ceil(h / 32),
         z = 1)
-    """
     cmd_list.end_marker()
     

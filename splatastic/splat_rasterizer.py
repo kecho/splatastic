@@ -17,6 +17,7 @@ class SplatRaster:
         self.m_coarse_tile_records_counter = None
         self.m_coarse_tile_record_max = 0
         self.m_coarse_tile_list_ordering = None
+        self.m_coarse_tile_list_ranges = None
         self.m_color_buffer = None
         self.m_constants = None
         self.m_max_width = 0
@@ -32,7 +33,7 @@ class SplatRaster:
     def init_shaders(self):
         self.m_coarse_dispatch_bin_shader = g.Shader(file = "shaders/splat_rasterizer_cs.hlsl", name="CoarseTileBin", main_function = "csCoarseTileBin")
         self.m_create_coarse_tile_args_shader = g.Shader(file = "shaders/splat_rasterizer_cs.hlsl", name="CreateCoarseTileDispatchArgs", main_function = "csCreateCoarseTileDispatchArgs")
-        self.m_create_coarse_tile_list_shader = g.Shader(file = "shaders/splat_rasterizer_cs.hlsl", name="CreateCoarseTileList", main_function = "csCreateCoarseTileList")
+        self.m_create_coarse_tile_list_ranges_shader = g.Shader(file = "shaders/splat_rasterizer_cs.hlsl", name="CreateCoarseTileList", main_function = "csCreateCoarseTileListRanges")
         self.m_raster_splat_shader = g.Shader(file = "shaders/splat_rasterizer_cs.hlsl", name="RasterSplats", main_function = "csRasterSplats")
 
     def update_constants(self, cmd_list, view_matrix, proj_matrix, width, height, coarse_tile_count_x, coarse_tile_count_y):
@@ -96,10 +97,16 @@ class SplatRaster:
             format = g.Format.RGBA_8_UNORM,
             width = self.m_max_width, height = self.m_max_height)
 
+        self.m_coarse_tile_list_ranges = g.Buffer(
+            "CoarseTileListRanges",
+            format = g.Format.R32_UINT, stride = 4,
+            element_count = 2 * coarse_tile_count_x * coarse_tile_count_y)
+
         return
 
     def clear_view_buffers(self, cmd_list, width, height, coarse_tile_count_x, coarse_tile_count_y):
         utilities.clear_uint_buffer(cmd_list, 0, self.m_coarse_tile_records_counter, 0, 1)
+        utilities.clear_uint_buffer(cmd_list, 0, self.m_coarse_tile_list_ranges, 0, coarse_tile_count_x * coarse_tile_count_y * 2)
 
     def dispatch_coarse_tile_bin(self, cmd_list, scene_data, coarse_tile_count_x, coarse_tile_count_y):
     
@@ -117,7 +124,7 @@ class SplatRaster:
         cmd_list.end_marker()
 
         cmd_list.begin_marker("radix_sort")
-        self.m_coarse_tile_list_ordering = radix_sort.run(cmd_list, self.m_coarse_tile_records, self.m_radix_sort_args, indirect_count_buffer = self.m_coarse_tile_records_counter)
+        (self.m_coarse_tile_list_ordering, _) = radix_sort.run(cmd_list, self.m_coarse_tile_records, self.m_radix_sort_args, indirect_count_buffer = self.m_coarse_tile_records_counter)
         cmd_list.end_marker()
 
         cmd_list.begin_marker("create_tile_args")
@@ -128,15 +135,15 @@ class SplatRaster:
             x = 1, y = 1, z = 1)
         cmd_list.end_marker()
 
-        #cmd_list.dispatch(
-        #    shader = self.m_create_coarse_tile_list_shader,
-        #    constants = self.m_constants,
-        #    inputs = [
-        #        self.m_coarse_tile_records_counter,
-        #        self.m_coarse_tile_list_offsets,
-        #        self.m_coarse_tile_records ],
-        #    outputs = [ self.m_coarse_tile_list_data ],
-        #    indirect_args = self.m_coarse_tile_args_buffer)
+        cmd_list.dispatch(
+            shader = self.m_create_coarse_tile_list_ranges_shader,
+            constants = self.m_constants,
+            inputs = [
+                self.m_coarse_tile_records_counter,
+                self.m_coarse_tile_list_ordering,
+                self.m_coarse_tile_records ],
+            outputs = [ self.m_coarse_tile_list_ranges ],
+            indirect_args = self.m_coarse_tile_args_buffer)
 
 
 

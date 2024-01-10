@@ -35,7 +35,7 @@ RWBuffer<uint> g_outputIndirectBuffer : register(u1);
 [numthreads(1, 1, 1)]
 void csWriteIndirectArguments()
 {
-    uint inputCount = g_inputIndirectCount[0];
+    uint inputCount = min(g_inputIndirectCount[0], 20217728);
     uint batchCounts = (inputCount + BATCH_SIZE - 1) / BATCH_SIZE;
 
     g_outputConstantBuffer[0] = inputCount;

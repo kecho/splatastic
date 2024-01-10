@@ -44,9 +44,6 @@ class EditorViewport:
         self.m_can_orbit_pressed = False
         self.m_last_mouse = (0.0, 0.0)
 
-        #profiler
-        self.m_profiler = None
-
         #camera settings
         self.m_cam_move_speed = 4.0
         self.m_cam_rotation_speed = 0.1
@@ -214,6 +211,9 @@ class Editor:
 
         self.m_open_active = False
         self.m_tools = self.createToolPanels()
+
+        #profiler
+        self.m_profiler = None
 
         #scene data
         self.m_scene_loader = None

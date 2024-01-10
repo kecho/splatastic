@@ -1,6 +1,6 @@
 #define COARSE_TILE_SIZE 32
 
-#define USE_TEST_DATA 0
+#define USE_TEST_DATA 1
 
 cbuffer Constants : register(b0)
 {
@@ -304,9 +304,12 @@ void csCoarseTileBin(uint3 dti : SV_DispatchThreadID, uint gti : SV_GroupThreadI
             uint globalOffset = 0;
             InterlockedAdd(g_outCoarseTileRecordCounter[0], 1, globalOffset);
 
-            uint packedTile = packCoarseTile(tileAddress, clipPos.z);
-            g_outCoarseTileRecordBuffer[globalOffset] = packedTile;
-            g_outCoarseTileRecordSplatIdBuffer[globalOffset] = splatID;
+            if (globalOffset < g_coarseTileRecordMax)
+            {
+                uint packedTile = packCoarseTile(tileAddress, clipPos.z);
+                g_outCoarseTileRecordBuffer[globalOffset] = packedTile;
+                g_outCoarseTileRecordSplatIdBuffer[globalOffset] = splatID;
+            }
         }
     }
 }
@@ -321,24 +324,49 @@ void csCreateCoarseTileDispatchArgs(int3 dti : SV_DispatchThreadID)
 }
 
 Buffer<uint> g_createListRecordCountBuffer : register(t0);
-Buffer<uint> g_createListOffsets : register(t1);
-Buffer<uint2> g_createListRecords : register(t2);
-RWBuffer<uint> g_outCreateListData : register(u0);
+Buffer<uint> g_createListOrdering : register(t1);
+Buffer<uint> g_createListRecords : register(t2);
+RWBuffer<uint> g_outTileListRanges : register(u0);
 
-[numthreads(64,1,1)]
-void csCreateCoarseTileList(uint3 dti : SV_DispatchThreadID)
+#define COARSE_TILE_LIST_GROUP_SIZE 64
+#define COARSE_TILE_LIST_LDS_SIZE (64 + 1)
+groupshared uint gs_sortedKeys[COARSE_TILE_LIST_LDS_SIZE];
+[numthreads(COARSE_TILE_LIST_GROUP_SIZE,1,1)]
+void csCreateCoarseTileListRanges(uint3 dti : SV_DispatchThreadID, uint3 gti : SV_GroupThreadID)
 {
-    //uint threadID = dti.x;
-    //uint recordCount = g_createListRecordCountBuffer[0];
-    //if (threadID >= recordCount)
-    //    return;
+    uint totalRecordCounts = g_createListRecordCountBuffer[0];
 
-    //uint2 coarseListRecord = g_createListRecords[threadID];
-    //uint tileAddress, tileOffset, splatID;
-    //unpackCoarseTile(coarseListRecord, tileAddress, tileOffset, splatID);
+    uint recordIndex = dti.x < totalRecordCounts ? g_createListOrdering[dti.x] : ~0;
+    gs_sortedKeys[gti.x] = recordIndex != ~0 ? g_createListRecords[recordIndex] : ~0;
+    if (gti.x == (COARSE_TILE_LIST_GROUP_SIZE - 1))
+    {
+        uint lastRecordIndex = (dti.x + 1) < totalRecordCounts ? g_createListOrdering[dti.x + 1] : ~0;
+        gs_sortedKeys[gti.x + 1] = lastRecordIndex != ~0 ? g_createListRecords[lastRecordIndex] : ~0;
+    }
 
-    //uint outputOffset = g_createListOffsets[tileAddress] + tileOffset;
-    //g_outCreateListData[outputOffset] = splatID;
+    GroupMemoryBarrierWithGroupSync();
+    
+    uint packedRecord0 = gs_sortedKeys[gti.x];
+    uint packedRecord1 = gs_sortedKeys[gti.x + 1];
+
+    float unusedZ;
+    uint tileAddress0, tileAddress1;
+    unpackCoarseTile(packedRecord0, tileAddress0, unusedZ);
+    unpackCoarseTile(packedRecord1, tileAddress1, unusedZ);
+
+    if (dti.x == 0)
+    {
+        g_outTileListRanges[2 * tileAddress0] = dti.x;
+    }
+    else if (dti.x == totalRecordCounts - 1)
+    {
+        g_outTileListRanges[2 * tileAddress0 + 1] = dti.x + 1;
+    }
+    else if (tileAddress0 != tileAddress1)
+    {
+        g_outTileListRanges[2 * tileAddress0] = dti.x;
+        g_outTileListRanges[2 * tileAddress1 + 1] = dti.x + 1;
+    }
 }
 
 //Buffer<uint> g_splatMetadataBuffer : register(t0);

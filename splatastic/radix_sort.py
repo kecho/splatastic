@@ -158,13 +158,20 @@ def run (cmd_list, input_buffer, sort_args, indirect_count_buffer = None):
         cmd_list.end_marker()
 
         cmd_list.begin_marker("scatter_output")
-        cmd_list.dispatch(
-            x = batch_counts, y = 1, z = 1,
-            shader = g_scatter_output_shader,
-            inputs = [unsorted_buffer, input_ordering, local_offsets, count_table_prefix, count_table ],
-            outputs = tmp_output_buffer,
-            constants = constant_buffer
-        )
+        if indirect_args == None:
+            cmd_list.dispatch(
+                x = batch_counts, y = 1, z = 1,
+                shader = g_scatter_output_shader,
+                inputs = [unsorted_buffer, input_ordering, local_offsets, count_table_prefix, count_table ],
+                outputs = tmp_output_buffer,
+                constants = constant_buffer)
+        else:
+            cmd_list.dispatch(
+                indirect_args = indirect_args,
+                shader = g_scatter_output_shader,
+                inputs = [unsorted_buffer, input_ordering, local_offsets, count_table_prefix, count_table ],
+                outputs = tmp_output_buffer,
+                constants = constant_buffer)
         cmd_list.end_marker()
 
     return (tmp_output_buffer, radix_total_counts)

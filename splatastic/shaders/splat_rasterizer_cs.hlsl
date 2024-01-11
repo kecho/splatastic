@@ -1,6 +1,6 @@
 #define COARSE_TILE_SIZE 32
 
-#define USE_TEST_DATA 1
+#define USE_TEST_DATA 0
 
 cbuffer Constants : register(b0)
 {
@@ -61,7 +61,7 @@ SplatScene loadSplatScene()
 #if USE_TEST_DATA
     scene.vertexCount = 3;
 #else
-    scene.vertexCount = g_splatMetadataBuffer[0];
+    scene.vertexCount = 100;//g_splatMetadataBuffer[0];
 #endif
     scene.stride = g_splatMetadataBuffer[1];
     scene.payload = g_splatPayloadBuffer;
@@ -72,20 +72,35 @@ SplatScene loadSplatScene()
 #define SPLAT_ALPHA_OFFSET (54 << 2)
 #define SPLAT_SCALE_OFFSET (55 << 2)
 #define SPLAT_ROT_OFFSET (58 << 2)
+#define SPLAT_SH_OFFSET (6 << 2)
 
 float3 loadSplatPosition(SplatScene scene, int index)
 {
 #if USE_TEST_DATA
-    return float3(4 * index, 0.0, 0.0);
+    return float3(4 * index, 0.0, 4 * index);
 #else
     return asfloat(scene.payload.Load3(index * scene.stride + SPLAT_POS_OFFSET));
+#endif
+}
+
+float3 loadSplatColor(SplatScene scene, int index)
+{
+#if USE_TEST_DATA
+    if (index == 0)
+        return float3(1,0,0);
+    else if (index == 1)
+        return float3(0,1,0);
+    else
+        return float3(0,0,1);
+#else
+    return asfloat(scene.payload.Load3(index * scene.stride + SPLAT_SH_OFFSET));
 #endif
 }
 
 float loadSplatAlpha(SplatScene scene, int index)
 {
 #if USE_TEST_DATA
-    return 1.0;
+    return index == 0 ? 1.0 : 0.4;
 #else
     return asfloat(scene.payload.Load(index * scene.stride + SPLAT_ALPHA_OFFSET));
 #endif
@@ -306,7 +321,7 @@ void csCoarseTileBin(uint3 dti : SV_DispatchThreadID, uint gti : SV_GroupThreadI
 
             if (globalOffset < g_coarseTileRecordMax)
             {
-                uint packedTile = packCoarseTile(tileAddress, clipPos.z);
+                uint packedTile = packCoarseTile(tileAddress, abs(viewPos.z) / 600.0);
                 g_outCoarseTileRecordBuffer[globalOffset] = packedTile;
                 g_outCoarseTileRecordSplatIdBuffer[globalOffset] = splatID;
             }
@@ -355,25 +370,26 @@ void csCreateCoarseTileListRanges(uint3 dti : SV_DispatchThreadID, uint3 gti : S
     unpackCoarseTile(packedRecord1, tileAddress1, unusedZ);
 
     if (dti.x == 0)
-    {
         g_outTileListRanges[2 * tileAddress0] = dti.x;
-    }
-    else if (dti.x == totalRecordCounts - 1)
-    {
+
+    if (dti.x == (totalRecordCounts - 1))
         g_outTileListRanges[2 * tileAddress0 + 1] = dti.x + 1;
-    }
-    else if (tileAddress0 != tileAddress1)
+
+    if (tileAddress0 != tileAddress1)
     {
-        g_outTileListRanges[2 * tileAddress0] = dti.x;
-        g_outTileListRanges[2 * tileAddress1 + 1] = dti.x + 1;
+        if (packedRecord0 != ~0u)
+            g_outTileListRanges[2 * tileAddress0 + 1] = dti.x + 1;
+
+        if (packedRecord1 != ~0u)
+            g_outTileListRanges[2 * tileAddress1] = dti.x + 1;
     }
 }
 
 //Buffer<uint> g_splatMetadataBuffer : register(t0);
 //ByteAddressBuffer g_splatPayloadBuffer : register(t1);
-Buffer<uint> g_coarseTileOffsets : register(t2);
-Buffer<uint> g_coarseTileCounts : register(t3);
-Buffer<uint> g_coarseTileData : register(t4);
+Buffer<uint> g_tileListRanges : register(t2);
+Buffer<uint> g_tileListOrdering : register(t3);
+Buffer<uint> g_tileListSplatIDs : register(t4);
 RWTexture2D<float4> g_colorBuffer : register(u0);
 
 [numthreads(8,8,1)]
@@ -386,20 +402,23 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
 
     uint2 tileID = dti.xy / COARSE_TILE_SIZE;
     uint tileAddress = tileID.x + tileID.y * g_coarseTileViewDims.x;
-    uint tileOffset = g_coarseTileOffsets[tileAddress];
-    uint tileCount = g_coarseTileCounts[tileAddress];
+    int tileBegin = (int)g_tileListRanges[2 * tileAddress];
+    int tileEnd = (int)g_tileListRanges[2 * tileAddress + 1];
 
     float2 screenUv = (dti.xy + 0.5) * float2(g_viewSizeInv.xy);
 
     float4 col = float4(0,0,0,0);
-    tileCount = min(tileCount, 250);
+    int tileCount = max(tileEnd - tileBegin, 0);
+    //tileCount = min(tileCount, 1000);
     float weights = 0.0;
     for (int i = 0; i < tileCount; ++i)
     {
-        uint splatID = g_coarseTileData[tileOffset + i];
+        uint splatID = g_tileListSplatIDs[g_tileListOrdering[tileBegin + i]];
         float3 splatPos = loadSplatPosition(splatScene, splatID);
         float3 splatScale = loadSplatScale(splatScene, splatID);
         float4 splatRotation = loadSplatRotation(splatScene, splatID);
+        float3 splatCol = loadSplatColor(splatScene, splatID);
+        float splatAlpha = loadSplatAlpha(splatScene, splatID);
     
         float3x3 splatTransform = calcMatrixFromRotationScale(splatRotation, splatScale);
 
@@ -413,7 +432,6 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
         float2 axis0, axis1;
         decomposeCovariance(cov2d, axis0, axis1);
 
-#if 1
         float lenAxis0 = dot(axis0, axis0);
         float lenAxis1 = dot(axis1, axis1);
 
@@ -421,16 +439,12 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
         splatRelUv = float2(dot(axis0, splatRelUv), dot(axis1, splatRelUv))/float2(lenAxis0, lenAxis1);
 
         float2 localCoord = splatRelUv;
-#endif
         
-        //float4 debugCol = float4(length(localCoord).xxx, 1.0);
-        float4 debugCol = float4(exp(-dot(localCoord, localCoord)).xxx, 1.0);
-        debugCol.w *= (abs(splatClipPos.z) > splatClipPos.w) ? 0.0 : 1.0;
-        col += debugCol;
+        float splatOpacity = exp(-dot(localCoord, localCoord)) * splatAlpha;
+        float4 radiance = float4(splatCol, splatOpacity);
+        col.rgb = lerp(col.rgb, splatCol, splatOpacity * saturate(1.0 - col.a));
+        col.a += saturate(splatOpacity * saturate(1.0 - col.a));
     }
 
-    col = col.w == 0 ? float4(0,0,0,0) : col;// / col.w;
-    if (tileOffset >= g_coarseTileRecordMax)
-        col.rgb = float3(1,0,0);
-    g_colorBuffer[dti.xy] = col * 0.5;
+    g_colorBuffer[dti.xy] = col * 1.0;
 }

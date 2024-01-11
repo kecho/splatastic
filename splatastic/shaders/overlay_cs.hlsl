@@ -8,7 +8,7 @@ SamplerState g_fontSampler : register(s0);
 
 Texture2D<float4> g_debugFont : register(t0);
 Buffer<uint> g_coarseTileRanges : register(t1);
-Texture2D<float4> g_colorBuffer : register(t3);
+Texture2D<float4> g_colorBuffer : register(t2);
 
 RWTexture2D<float4> g_output : register(u0);
 
@@ -98,8 +98,8 @@ void csMainOverlay(
     float2 tileUV = (gti.xy + 0.5) / float2(32.0, 32.0);
     int tileBegin = g_coarseTileRanges[2 * tileCoord];
     int tileEnd = g_coarseTileRanges[2 * tileCoord + 1];
-    uint coarseCount = (tileEnd - tileBegin);
-    float4 tileColor = coarseCount == 0 ? float4(0,0,0,0) : drawTile(dti.xy, 32, coarseCount);
+    uint coarseCount = max((tileEnd - tileBegin), 0);
+    float4 tileColor = 0;//coarseCount == 0 ? float4(0,0,0,0) : drawTile(dti.xy, 32, coarseCount);
     float4 inputColor = g_colorBuffer.Load(float3(dti.xy, 0));
-    g_output[dti.xy] = tileColor;//float4(lerp(inputColor.rgb, tileColor.rgb, tileColor.a), 1.0);
+    g_output[dti.xy] = float4(lerp(inputColor.rgb, tileColor.rgb, tileColor.a), 1.0);
 }

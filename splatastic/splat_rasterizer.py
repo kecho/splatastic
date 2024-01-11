@@ -4,7 +4,7 @@ from . import utilities
 from . import camera
 from . import radix_sort
 
-g_coarse_tile_record_bytes = 512 * 1024 * 1024
+g_coarse_tile_record_bytes = 1024 * 1024 * 1024
 
 CoarseTileSize = 32
 
@@ -146,20 +146,18 @@ class SplatRaster:
             indirect_args = self.m_coarse_tile_args_buffer)
 
 
-
     def dispatch_raster_splat(self, cmd_list, scene_data, width, height):
-        return
-        #cmd_list.dispatch(
-        #    shader = self.m_raster_splat_shader,
-        #    inputs = [
-        #        scene_data.metadata_buffer,
-        #        scene_data.payload_buffer,
-        #        self.m_coarse_tile_list_offsets,
-        #        self.m_tile_counter,
-        #        self.m_coarse_tile_list_data ],
-        #    outputs = self.m_color_buffer,
-        #    constants = self.m_constants,
-        #    x = utilities.divup(width, 8), y = utilities.divup(height, 8), z = 1)
+        cmd_list.dispatch(
+            shader = self.m_raster_splat_shader,
+            inputs = [
+                scene_data.metadata_buffer,
+                scene_data.payload_buffer,
+                self.m_coarse_tile_list_ranges,
+                self.m_coarse_tile_list_ordering,
+                self.m_coarse_tile_record_splat_ids ],
+            outputs = self.m_color_buffer,
+            constants = self.m_constants,
+            x = utilities.divup(width, 8), y = utilities.divup(height, 8), z = 1)
 
     def get_coarse_tiles_dims(self, width, height):
         return (int(math.ceil(width/CoarseTileSize)), int(math.ceil(height/CoarseTileSize)))

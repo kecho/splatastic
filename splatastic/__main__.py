@@ -43,12 +43,13 @@ def on_render(render_args : coalpy.gpu.RenderArgs):
     active_editor.profiler_begin_capture()
     viewports = active_editor.viewports
     for vp in viewports:
-        vp.update(render_args.delta_time)
+        vp.update(render_args.delta_time, rasterizer)
         cmd_list = coalpy.gpu.CommandList()
 
         rasterizer.raster(cmd_list, scene_data, vp.camera.view_matrix, vp.camera.proj_matrix, vp.width, vp.height)
         overlay.render_overlay(cmd_list, rasterizer, rasterizer.color_buffer, vp.texture, vp)
         coalpy.gpu.schedule(cmd_list)
+
     active_editor.profiler_end_capture()
     return True
 

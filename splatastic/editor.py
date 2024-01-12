@@ -50,6 +50,10 @@ class EditorViewport:
         self.m_last_mouse = (0, 0)
         self.m_curr_mouse = (0, 0)
 
+        # public debug info
+        self.gpu_view_debug_info = None
+        self.request_gpu_view_debug_info = False
+
     def save_editor_state(self):
         return {
             'id' : self.m_id,
@@ -140,7 +144,10 @@ class EditorViewport:
             self.m_last_mouse = self.m_curr_mouse
             self.m_curr_mouse = curr_mouse_pos
 
-    def update(self, delta_time):
+    def update(self, delta_time, rasterizer):
+        if self.request_gpu_view_debug_info:
+            self.gpu_view_debug_info = rasterizer.update_gpu_debug_view_info(self.gpu_view_debug_info)
+        
         self.m_editor_camera.w = self.m_width
         self.m_editor_camera.h = self.m_height
         if (self.m_can_move_pressed):
@@ -309,6 +316,20 @@ class Editor:
 
                 self.m_selected_viewport.m_cam_move_speed = imgui.slider_float(label="moving speed", v = self.m_selected_viewport.m_cam_move_speed, v_min = 0.01, v_max = 16.0)
 
+            self.m_selected_viewport.request_gpu_view_debug_info = imgui.collapsing_header("Raster Debug Info")
+            if (self.m_selected_viewport.request_gpu_view_debug_info):
+                gpu_debug_info = self.m_selected_viewport.gpu_view_debug_info
+                if gpu_debug_info != None:
+                    imgui.text("Max tile records: %d " % gpu_debug_info.coarse_tile_record_max)
+                    imgui.text("View tile record count: %d " % gpu_debug_info.current_view_tile_records)
+                    prog_bar_fraction = 0 if gpu_debug_info.coarse_tile_record_max == 0 else gpu_debug_info.current_view_tile_records / gpu_debug_info.coarse_tile_record_max
+                    imgui.progress_bar(
+                        fraction = prog_bar_fraction, overlay = "%d" % (int(100 * prog_bar_fraction)))
+                else:
+                    imgui.text("Loading debug info...")
+            else:
+                self.m_selected_viewport.gpu_view_debug_info = None
+
         imgui.end()
 
     def build_profiler(self, imgui : g.ImguiBuilder, implot : g.ImplotBuilder):
@@ -349,7 +370,6 @@ class Editor:
                     print ("No vertex count found. Unloading scene.")
                     self.m_scene_data.vertex_count = None
         
-
         if self.m_scene_data != None:
             imgui.text("Scene vertices: %d" % self.m_scene_data.vertex_count)
             imgui.text("Vertex stride: %d" % self.m_scene_data.stride)

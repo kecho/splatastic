@@ -148,12 +148,13 @@ def run (cmd_list, input_buffer, sort_args, indirect_count_buffer = None):
         )
         cmd_list.end_marker()
 
+        global_table = count_table #alias the global table wiuth the count table, which is unused. Saves some memory.
         cmd_list.begin_marker("prefix_global_table")
         cmd_list.dispatch(
             x = 1, y = 1, z = 1,
             shader = g_prefix_global_table_shader,
             inputs = radix_total_counts,
-            outputs = count_table
+            outputs = global_table
         )
         cmd_list.end_marker()
 
@@ -162,14 +163,14 @@ def run (cmd_list, input_buffer, sort_args, indirect_count_buffer = None):
             cmd_list.dispatch(
                 x = batch_counts, y = 1, z = 1,
                 shader = g_scatter_output_shader,
-                inputs = [unsorted_buffer, input_ordering, local_offsets, count_table_prefix, count_table ],
+                inputs = [unsorted_buffer, input_ordering, local_offsets, count_table_prefix, global_table ],
                 outputs = tmp_output_buffer,
                 constants = constant_buffer)
         else:
             cmd_list.dispatch(
                 indirect_args = indirect_args,
                 shader = g_scatter_output_shader,
-                inputs = [unsorted_buffer, input_ordering, local_offsets, count_table_prefix, count_table ],
+                inputs = [unsorted_buffer, input_ordering, local_offsets, count_table_prefix, global_table ],
                 outputs = tmp_output_buffer,
                 constants = constant_buffer)
         cmd_list.end_marker()

@@ -61,7 +61,7 @@ SplatScene loadSplatScene()
 #if USE_TEST_DATA
     scene.vertexCount = 100;
 #else
-    scene.vertexCount = g_splatMetadataBuffer[0];
+    scene.vertexCount = min(g_splatMetadataBuffer[0], 125000);
 #endif
     scene.stride = g_splatMetadataBuffer[1];
     scene.payload = g_splatPayloadBuffer;
@@ -100,7 +100,7 @@ float3 loadSplatColor(SplatScene scene, int index)
 float loadSplatAlpha(SplatScene scene, int index)
 {
 #if USE_TEST_DATA
-    return 0.1;
+    return index == 0 ? 0.9 : 0.1;
 #else
     return asfloat(scene.payload.Load(index * scene.stride + SPLAT_ALPHA_OFFSET));
 #endif
@@ -409,7 +409,7 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
 
     float4 col = float4(0,0,0,0);
     int tileCount = max(tileEnd - tileBegin, 0);
-    tileCount = min(tileCount, 10);
+    tileCount = min(tileCount, 500);
     float weights = 0.0;
     for (int i = 0; i < tileCount; ++i)
     {
@@ -462,5 +462,5 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
 #endif
     }
 
-    g_colorBuffer[dti.xy] = float4(col.rgb * 0.5, col.a);
+    g_colorBuffer[dti.xy] = float4(col.rgb, col.a);
 }

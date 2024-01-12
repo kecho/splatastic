@@ -1,12 +1,21 @@
 import coalpy.gpu as g
+import numpy
+from dataclasses import dataclass
 import math
 from . import utilities
 from . import camera
 from . import radix_sort
 
-g_coarse_tile_record_bytes = 1024 * 1024 * 1024
+g_coarse_tile_record_bytes = 512 * 1024 * 1024
 
 CoarseTileSize = 32
+
+@dataclass
+class SplatRasterViewGpuInfo:
+    coarse_tile_record_max : int = 0
+    current_view_tile_records : int = 0
+    coarse_tile_records_counter_copy = None
+    resource_request = None
 
 class SplatRaster:
 
@@ -76,7 +85,6 @@ class SplatRaster:
                 format = g.Format.R32_UINT,
                 stride = coarse_tile_record_stride,
                 element_count = self.m_coarse_tile_record_max)
-            print ("Max records: " + str(self.m_coarse_tile_record_max))
 
         if self.m_coarse_tile_records_counter is None:
             self.m_coarse_tile_records_counter = g.Buffer(
@@ -182,3 +190,35 @@ class SplatRaster:
         self.dispatch_coarse_tile_bin(cmd_list, scene_data, coarse_tile_count_x, coarse_tile_count_y)
 
         self.dispatch_raster_splat(cmd_list, scene_data, width, height)
+
+    def update_gpu_debug_view_info(self, debug_gpu_view_info):
+        if self.m_coarse_tile_records_counter is None:
+            return None
+
+        if debug_gpu_view_info is None:
+            debug_gpu_view_info = SplatRasterViewGpuInfo()
+
+        debug_gpu_view_info.coarse_tile_record_max = self.m_coarse_tile_record_max
+        if debug_gpu_view_info.coarse_tile_records_counter_copy is None:
+            debug_gpu_view_info.coarse_tile_records_counter_copy = g.Buffer(
+                name = "DebugCounterTileRecordsCounterCopy", 
+                format = g.Format.R32_UINT,
+                stride = 4,
+                element_count = 1)
+
+        if debug_gpu_view_info.resource_request is None:
+            cmd_list = g.CommandList()
+            cmd_list.copy_resource(
+                source = self.m_coarse_tile_records_counter,
+                destination = debug_gpu_view_info.coarse_tile_records_counter_copy)
+            g.schedule(cmd_list)
+            debug_gpu_view_info.resource_request =  g.ResourceDownloadRequest(resource = debug_gpu_view_info.coarse_tile_records_counter_copy)
+
+        if debug_gpu_view_info.resource_request != None and debug_gpu_view_info.resource_request.is_ready():
+            cpu_result_array = numpy.frombuffer(debug_gpu_view_info.resource_request.data_as_bytearray(), dtype='i')
+            debug_gpu_view_info.current_view_tile_records = cpu_result_array[0]
+            debug_gpu_view_info.resource_request = None
+
+        return debug_gpu_view_info
+
+

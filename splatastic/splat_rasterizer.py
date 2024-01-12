@@ -135,6 +135,7 @@ class SplatRaster:
             x = 1, y = 1, z = 1)
         cmd_list.end_marker()
 
+        cmd_list.begin_marker("create_tile_list_ranges")
         cmd_list.dispatch(
             shader = self.m_create_coarse_tile_list_ranges_shader,
             constants = self.m_constants,
@@ -144,9 +145,11 @@ class SplatRaster:
                 self.m_coarse_tile_records ],
             outputs = [ self.m_coarse_tile_list_ranges ],
             indirect_args = self.m_coarse_tile_args_buffer)
+        cmd_list.end_marker()
 
 
     def dispatch_raster_splat(self, cmd_list, scene_data, width, height):
+        cmd_list.begin_marker("raster_splat")
         cmd_list.dispatch(
             shader = self.m_raster_splat_shader,
             inputs = [
@@ -158,6 +161,7 @@ class SplatRaster:
             outputs = self.m_color_buffer,
             constants = self.m_constants,
             x = utilities.divup(width, 8), y = utilities.divup(height, 8), z = 1)
+        cmd_list.end_marker()
 
     def get_coarse_tiles_dims(self, width, height):
         return (int(math.ceil(width/CoarseTileSize)), int(math.ceil(height/CoarseTileSize)))

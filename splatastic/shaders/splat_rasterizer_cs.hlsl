@@ -59,9 +59,9 @@ SplatScene loadSplatScene()
 {
     SplatScene scene;
 #if USE_TEST_DATA
-    scene.vertexCount = 3;
+    scene.vertexCount = 100;
 #else
-    scene.vertexCount = 100;//g_splatMetadataBuffer[0];
+    scene.vertexCount = g_splatMetadataBuffer[0];
 #endif
     scene.stride = g_splatMetadataBuffer[1];
     scene.payload = g_splatPayloadBuffer;
@@ -77,7 +77,7 @@ SplatScene loadSplatScene()
 float3 loadSplatPosition(SplatScene scene, int index)
 {
 #if USE_TEST_DATA
-    return float3(4 * index, 0.0, 4 * index);
+    return float3(0.0, 0.0, 4 * index);
 #else
     return asfloat(scene.payload.Load3(index * scene.stride + SPLAT_POS_OFFSET));
 #endif
@@ -86,9 +86,9 @@ float3 loadSplatPosition(SplatScene scene, int index)
 float3 loadSplatColor(SplatScene scene, int index)
 {
 #if USE_TEST_DATA
-    if (index == 0)
+    if ((index % 3) == 0)
         return float3(1,0,0);
-    else if (index == 1)
+    else if ((index % 3) ==  1)
         return float3(0,1,0);
     else
         return float3(0,0,1);
@@ -100,7 +100,7 @@ float3 loadSplatColor(SplatScene scene, int index)
 float loadSplatAlpha(SplatScene scene, int index)
 {
 #if USE_TEST_DATA
-    return index == 0 ? 1.0 : 0.4;
+    return 0.1;
 #else
     return asfloat(scene.payload.Load(index * scene.stride + SPLAT_ALPHA_OFFSET));
 #endif
@@ -109,8 +109,8 @@ float loadSplatAlpha(SplatScene scene, int index)
 float3 loadSplatScale(SplatScene scene, int index)
 {
 #if USE_TEST_DATA
-    if (index == 0)
-        return float3(2,1,1);
+    if ((index & 0x1) == 0)
+        return float3(3,0.1,1);
     else
         return float3(1,1,1);
 #else
@@ -409,15 +409,17 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
 
     float4 col = float4(0,0,0,0);
     int tileCount = max(tileEnd - tileBegin, 0);
-    //tileCount = min(tileCount, 1000);
+    tileCount = min(tileCount, 10);
     float weights = 0.0;
     for (int i = 0; i < tileCount; ++i)
     {
-        uint splatID = g_tileListSplatIDs[g_tileListOrdering[tileBegin + i]];
+        uint tileOrdering = g_tileListOrdering[tileBegin + i];
+
+        uint splatID = g_tileListSplatIDs[tileOrdering];
         float3 splatPos = loadSplatPosition(splatScene, splatID);
         float3 splatScale = loadSplatScale(splatScene, splatID);
         float4 splatRotation = loadSplatRotation(splatScene, splatID);
-        float3 splatCol = loadSplatColor(splatScene, splatID);
+        float3 splatCol = max(loadSplatColor(splatScene, splatID), float3(0,0,0));
         float splatAlpha = loadSplatAlpha(splatScene, splatID);
     
         float3x3 splatTransform = calcMatrixFromRotationScale(splatRotation, splatScale);
@@ -440,11 +442,25 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
 
         float2 localCoord = splatRelUv;
         
-        float splatOpacity = exp(-dot(localCoord, localCoord)) * splatAlpha;
-        float4 radiance = float4(splatCol, splatOpacity);
-        col.rgb = lerp(col.rgb, splatCol, splatOpacity * saturate(1.0 - col.a));
-        col.a += saturate(splatOpacity * saturate(1.0 - col.a));
+        float splatOpacity = exp(-dot(localCoord, localCoord)) * saturate(splatAlpha);
+        float4 radiance = float4(splatCol * splatOpacity, splatOpacity);
+#if 0
+        col +=  radiance * saturate(1.0 - col.a);
+        //col += abs(exp(-dot(localCoord, localCoord))) * saturate(1.0 - col.a);
+        col.a = saturate(col.a);
+#elif 1
+        float op = saturate(col.a);
+        col.rgb += radiance.rgb * (1.0 - op);
+        col.a = saturate(op + radiance.a);
+#else
+        float op = saturate(col.a);
+        float3 sampleCol = splatOpacity * splatCol;
+        if (length(localCoord) > 1.8)
+            sampleCol = 0;
+        col.rgb += sampleCol * (1.0 - op);
+        col.a = saturate(op + splatOpacity);
+#endif
     }
 
-    g_colorBuffer[dti.xy] = col * 1.0;
+    g_colorBuffer[dti.xy] = float4(col.rgb * 0.5, col.a);
 }

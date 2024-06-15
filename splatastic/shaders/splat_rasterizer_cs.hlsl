@@ -97,12 +97,31 @@ float3 loadSplatColor(SplatScene scene, int index)
 #endif
 }
 
+float sigmoid(float x)
+{
+	// CUDA Gaussian Splatting implementation
+	// https://github.com/graphdeco-inria/diff-gaussian-rasterization/blob/8064f52ca233942bdec2d1a1451c026deedd320b/cuda_rasterizer/auxiliary.h
+	return 1.0f / (1.0f + exp(-x));
+
+/* // no visual difference
+	if (x >= 0.0f)
+	{
+		return 1.0f / (1.0f + exp(-x));
+	}
+	else
+	{
+		float z = exp(x);
+		return z / (1.0f + z);
+	}
+*/
+}
+
 float loadSplatAlpha(SplatScene scene, int index)
 {
 #if USE_TEST_DATA
     return index == 0 ? 0.9 : 0.1;
 #else
-    return asfloat(scene.payload.Load(index * scene.stride + SPLAT_ALPHA_OFFSET));
+    return sigmoid(asfloat(scene.payload.Load(index * scene.stride + SPLAT_ALPHA_OFFSET)));
 #endif
 }
 
@@ -114,7 +133,7 @@ float3 loadSplatScale(SplatScene scene, int index)
     else
         return float3(1,1,1);
 #else
-    return asfloat(scene.payload.Load3(index * scene.stride + SPLAT_SCALE_OFFSET));
+    return exp(asfloat(scene.payload.Load3(index * scene.stride + SPLAT_SCALE_OFFSET)));
 #endif
 }
 
@@ -130,6 +149,32 @@ float4 loadSplatRotation(SplatScene scene, int index)
 //// taken from UnityGaussianSplatting ////
 // Aras P., https://github.com/aras-p/UnityGaussianSplatting
 
+float3x3 matrixFromQuaternion(float4 q)
+{
+	float3x3 m;
+
+
+	// has positive effect on some
+	q = normalize(q);
+
+	// CUDA Gaussian Splatting implementation
+	// https://github.com/graphdeco-inria/diff-gaussian-rasterization/blob/8064f52ca233942bdec2d1a1451c026deedd320b/cuda_rasterizer/forward.cu
+
+	float r		= q.x;
+	float x		= q.y;
+	float y		= q.z;
+	float z		= q.w;
+
+	// Compute rotation matrix from quaternion
+	m = float3x3(
+		1.f - 2.f * (y * y + z * z), 2.f * (x * y - r * z), 2.f * (x * z + r * y),
+		2.f * (x * y + r * z), 1.f - 2.f * (x * x + z * z), 2.f * (y * z - r * x),
+		2.f * (x * z - r * y), 2.f * (y * z + r * x), 1.f - 2.f * (x * x + y * y));
+
+	return m;
+}
+
+
 float3x3 calcMatrixFromRotationScale(float4 rot, float3 scale)
 {
     float3x3 ms = float3x3(
@@ -137,16 +182,7 @@ float3x3 calcMatrixFromRotationScale(float4 rot, float3 scale)
         0, scale.y, 0,
         0, 0, scale.z
     );
-    float x = rot.x;
-    float y = rot.y;
-    float z = rot.z;
-    float w = rot.w;
-    float3x3 mr = float3x3(
-        1-2*(y*y + z*z),   2*(x*y - w*z),   2*(x*z + w*y),
-          2*(x*y + w*z), 1-2*(x*x + z*z),   2*(y*z - w*x),
-          2*(x*z - w*y),   2*(y*z + w*x), 1-2*(x*x + y*y)
-    );
-    return mul(mr, ms);
+    return mul(matrixFromQuaternion(rot), ms);
 }
 
 void calcCovariance3D(float3x3 rotMat, out float3 sigma0, out float3 sigma1)
@@ -296,11 +332,11 @@ void csCoarseTileBin(uint3 dti : SV_DispatchThreadID, uint gti : SV_GroupThreadI
 
     float2 uvCenter = ndcToUv(clipPos.xy / clipPos.w);
     float2 uvCorner = ndcToUv(clipEnd.xy / clipEnd.w);
-    float2 uvDiff = abs(uvCorner - uvCenter) * 1.9;
+    float2 uvDiff = abs(uvCorner - uvCenter);
     float2 aabbBegin = uvCenter - uvDiff;
     float2 aabbEnd = uvCenter + uvDiff;
 
-    if (any(uvDiff < 16.0 * g_viewSizeInv.xy) || any(uvDiff > 4.0) || any(aabbBegin >= float2(1.0,1.0)) || any(aabbEnd <= float2(0.0,0.0)))
+    if (any(aabbBegin >= float2(1.0,1.0)) || any(aabbEnd <= float2(0.0,0.0)))
         return;
 
     aabbBegin = saturate(aabbBegin);
@@ -407,9 +443,9 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
 
     float2 screenUv = (dti.xy + 0.5) * float2(g_viewSizeInv.xy);
 
-    float4 col = float4(0,0,0,0);
+    float4 col = float4(0,0,0,1.0);
     int tileCount = max(tileEnd - tileBegin, 0);
-    tileCount = min(tileCount, 500);
+    //tileCount = min(tileCount, 500);
     float weights = 0.0;
     for (int i = 0; i < tileCount; ++i)
     {
@@ -437,6 +473,11 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
         float lenAxis0 = dot(axis0, axis0);
         float lenAxis1 = dot(axis1, axis1);
 
+		axis0 *= 2;
+		axis1 *= 2;
+		//axis0.y *= -1;	
+		//axis1.y *= -1;	
+
         float2 splatRelUv = (splatScreenUv - screenUv) * (float2)g_viewSize;
         splatRelUv = float2(dot(axis0, splatRelUv), dot(axis1, splatRelUv))/float2(lenAxis0, lenAxis1);
 
@@ -444,11 +485,11 @@ void csRasterSplats(int3 dti : SV_DispatchThreadID)
         
         float splatOpacity = exp(-dot(localCoord, localCoord)) * saturate(splatAlpha);
         float4 radiance = float4(splatCol * splatOpacity, splatOpacity);
-#if 0
-        col +=  radiance * saturate(1.0 - col.a);
+#if 1
+        col.rgb = radiance.rgb + col.rgb * (1.0 - radiance.a);
+        col.a = saturate(radiance.a + (1.0 - radiance.a) * col.a);
         //col += abs(exp(-dot(localCoord, localCoord))) * saturate(1.0 - col.a);
-        col.a = saturate(col.a);
-#elif 1
+#elif 0
         float op = saturate(col.a);
         col.rgb += radiance.rgb * (1.0 - op);
         col.a = saturate(op + radiance.a);
